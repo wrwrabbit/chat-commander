@@ -1,100 +1,55 @@
 import threading
 
-from sqlalchemy import Column, BigInteger, UnicodeText
+from sqlalchemy import Column, BigInteger, UnicodeText, Boolean
 
 from tg_bot.modules.sql import SESSION, BASE
-
-
-class UserInfo(BASE):
-    __tablename__ = "userinfo"
-    user_id = Column(BigInteger, primary_key=True)
-    info = Column(UnicodeText)
-
-    def __init__(self, user_id, info):
-        self.user_id = user_id
-        self.info = info
-
-    def __repr__(self):
-        return "<User info %d>" % self.user_id
 
 
 class UserBio(BASE):
     __tablename__ = "userbio"
     user_id = Column(BigInteger, primary_key=True)
+    is_channel = Column(Boolean, primary_key=True)
     bio = Column(UnicodeText)
 
-    def __init__(self, user_id, bio):
+    def __init__(self, user_id, is_channel, bio):
         self.user_id = user_id
+        self.is_channel = is_channel
         self.bio = bio
 
     def __repr__(self):
         return "<User info %d>" % self.user_id
 
 
-UserInfo.__table__.create(checkfirst=True)
 UserBio.__table__.create(checkfirst=True)
 
 INSERTION_LOCK = threading.RLock()
 
 
-def get_user_me_info(user_id):
-    userinfo = SESSION.query(UserInfo).get(user_id)
-    SESSION.close()
-    if userinfo:
-        return userinfo.info
-    return None
-
-
-def set_user_me_info(user_id, info):
-    with INSERTION_LOCK:
-        userinfo = SESSION.query(UserInfo).get(user_id)
-        if userinfo:
-            userinfo.info = info
-        else:
-            userinfo = UserInfo(user_id, info)
-        SESSION.add(userinfo)
-        SESSION.commit()
-
-
-def get_user_bio(user_id):
-    userbio = SESSION.query(UserBio).get(user_id)
+def get_user_bio(user_id, is_channel):
+    userbio = SESSION.query(UserBio).filter(UserBio.user_id == user_id, UserBio.is_channel == is_channel).first()
     SESSION.close()
     if userbio:
         return userbio.bio
     return None
 
 
-def set_user_bio(user_id, bio):
+def set_user_bio(user_id, is_channel, bio):
     with INSERTION_LOCK:
-        userbio = SESSION.query(UserBio).get(user_id)
+        userbio = SESSION.query(UserBio).filter(UserBio.user_id == user_id, UserBio.is_channel == is_channel).first()
         if userbio:
             userbio.bio = bio
         else:
-            userbio = UserBio(user_id, bio)
-
+            userbio = UserBio(user_id, is_channel, bio)
         SESSION.add(userbio)
         SESSION.commit()
 
 
-def clear_user_info(user_id):
+def clear_user_bio(user_id, is_channel):
     with INSERTION_LOCK:
-        curr = SESSION.query(UserInfo).get(user_id)
+        curr = SESSION.query(UserBio).filter(UserBio.user_id == user_id, UserBio.is_channel == is_channel).first()
         if curr:
             SESSION.delete(curr)
             SESSION.commit()
             return True
-
-        SESSION.close()
-    return False
-
-
-def clear_user_bio(user_id):
-    with INSERTION_LOCK:
-        curr = SESSION.query(UserBio).get(user_id)
-        if curr:
-            SESSION.delete(curr)
-            SESSION.commit()
-            return True
-
         SESSION.close()
     return False
