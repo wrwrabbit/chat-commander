@@ -14,7 +14,7 @@ from tg_bot import dispatcher, OWNER_ID, SUDO_USERS, SUPPORT_USERS, WHITELIST_US
 from tg_bot.__main__ import GDPR
 from tg_bot.__main__ import STATS, USER_INFO
 from tg_bot.modules.disable import DisableAbleCommandHandler
-from tg_bot.modules.helper_funcs.extraction import extract_user
+from tg_bot.modules.helper_funcs.extraction import extract_user_and_is_channel
 from tg_bot.modules.helper_funcs.filters import CustomFilters
 
 RUN_STRINGS = (
@@ -153,7 +153,7 @@ def slap(bot: Bot, update: Update):
     else:
         curr_user = "[{}](tg://user?id={})".format(msg.from_user.first_name, msg.from_user.id)
 
-    user_id = extract_user(update.effective_message, args)
+    user_id, is_channel = extract_user_and_is_channel(update.effective_message, args)
     if user_id:
         slapped_user = bot.get_chat(user_id)
         user1 = curr_user
@@ -190,7 +190,7 @@ def get_bot_ip(bot: Bot, update: Update):
 # @run_async
 def get_id(bot: Bot, update: Update):
     args = update.effective_message.text.split(" ")[1:]
-    user_id = extract_user(update.effective_message, args)
+    user_id, is_channel = extract_user_and_is_channel(update.effective_message, args)
     if user_id:
         if update.effective_message.reply_to_message and update.effective_message.reply_to_message.forward_from:
             user1 = update.effective_message.reply_to_message.from_user
@@ -204,7 +204,7 @@ def get_id(bot: Bot, update: Update):
                 parse_mode=ParseMode.MARKDOWN)
         else:
             user = bot.get_chat(user_id)
-            update.effective_message.reply_text("{}'s id is `{}`.".format(escape_markdown(user.first_name), user.id),
+            update.effective_message.reply_text("{}'s id is `{}`.".format(escape_markdown(user.first_name or user.username), user.id),
                                                 parse_mode=ParseMode.MARKDOWN)
     else:
         chat = update.effective_chat  # type: Optional[Chat]
@@ -221,7 +221,7 @@ def get_id(bot: Bot, update: Update):
 def info(bot: Bot, update: Update):
     args = update.effective_message.text.split(" ")[1:]
     msg = update.effective_message  # type: Optional[Message]
-    user_id = extract_user(update.effective_message, args)
+    user_id, is_channel = extract_user_and_is_channel(update.effective_message, args)
 
     if user_id:
         user = bot.get_chat(user_id)
@@ -240,10 +240,10 @@ def info(bot: Bot, update: Update):
 
     text = "<b>User info</b>:" \
            "\nID: <code>{}</code>" \
-           "\nFirst Name: {}".format(user.id, html.escape(user.first_name))
+           "\nFirst Name: {}".format(user.id, html.escape(user.first_name or user.username))
 
     if user.last_name:
-        text += "\nLast Name: {}".format(html.escape(user.last_name))
+        text += "\nLast Name: {}".format(html.escape(user.last_name or user.username))
 
     if user.username:
         text += "\nUsername: @{}".format(html.escape(user.username))
