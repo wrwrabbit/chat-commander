@@ -1,6 +1,6 @@
 import threading
 
-from sqlalchemy import Column, BigInteger, UnicodeText, String, ForeignKey, UniqueConstraint, func
+from sqlalchemy import Column, BigInteger, UnicodeText, String, ForeignKey, func, Boolean, ForeignKeyConstraint
 
 from tg_bot import dispatcher
 from tg_bot.modules.sql import BASE, SESSION
@@ -9,14 +9,16 @@ from tg_bot.modules.sql import BASE, SESSION
 class Users(BASE):
     __tablename__ = "users"
     user_id = Column(BigInteger, primary_key=True)
+    is_channel = Column(Boolean, primary_key=True)
     username = Column(UnicodeText)
 
-    def __init__(self, user_id, username=None):
+    def __init__(self, user_id, is_channel, username=None):
         self.user_id = user_id
+        self.is_channel = is_channel
         self.username = username
 
     def __repr__(self):
-        return "<User {} ({})>".format(self.username, self.user_id)
+        return "<User {} ({} is channel: )>".format(self.username, self.user_id, self.is_channel)
 
 
 class Chats(BASE):
@@ -41,19 +43,17 @@ class ChatMembers(BASE):
                              onupdate="CASCADE",
                              ondelete="CASCADE"),
                   nullable=False)
-    user = Column(BigInteger,
-                  ForeignKey("users.user_id",
-                             onupdate="CASCADE",
-                             ondelete="CASCADE"),
-                  nullable=False)
-    __table_args__ = (UniqueConstraint('chat', 'user', name='_chat_members_uc'),)
+    user_id = Column(BigInteger, nullable=False)
+    is_channel = Column(Boolean, nullable=False)
+    __table_args__ = (ForeignKeyConstraint([user_id, is_channel], [Users.user_id, Users.is_channel]), {})
 
-    def __init__(self, chat, user):
+    def __init__(self, chat, user_id, is_channel):
         self.chat = chat
-        self.user = user
+        self.user_id = user_id
+        self.is_channel = is_channel
 
     def __repr__(self):
-        return "<Chat user {} ({}) in chat {} ({})>".format(self.user.username, self.user.user_id,
+        return "<Chat user {} ({}) in chat {} ({})>".format(self.user.user_id, self.user.is_channel,
                                                             self.chat.chat_name, self.chat.chat_id)
 
 
@@ -66,16 +66,16 @@ INSERTION_LOCK = threading.RLock()
 
 def ensure_bot_in_db():
     with INSERTION_LOCK:
-        bot = Users(dispatcher.bot.id, dispatcher.bot.username)
+        bot = Users(dispatcher.bot.id, False, dispatcher.bot.username)
         SESSION.merge(bot)
         SESSION.commit()
 
 
-def update_user(user_id, username, chat_id=None, chat_name=None):
+def update_user(user_id, is_channel, username, chat_id=None, chat_name=None):
     with INSERTION_LOCK:
-        user = SESSION.query(Users).get(user_id)
+        user = SESSION.query(Users).filter(Users.user_id == user_id, Users.is_channel == is_channel).first()
         if not user:
-            user = Users(user_id, username)
+            user = Users(user_id, is_channel, username)
             SESSION.add(user)
             SESSION.flush()
         else:
@@ -95,9 +95,10 @@ def update_user(user_id, username, chat_id=None, chat_name=None):
             chat.chat_name = chat_name
 
         member = SESSION.query(ChatMembers).filter(ChatMembers.chat == chat.chat_id,
-                                                   ChatMembers.user == user.user_id).first()
+                                                   ChatMembers.user_id == user.user_id,
+                                                   ChatMembers.is_channel == user.is_channel).first()
         if not member:
-            chat_member = ChatMembers(chat.chat_id, user.user_id)
+            chat_member = ChatMembers(chat.chat_id, user.user_id, is_channel)
             SESSION.add(chat_member)
 
         SESSION.commit()
@@ -106,13 +107,6 @@ def update_user(user_id, username, chat_id=None, chat_name=None):
 def get_userid_by_name(username):
     try:
         return SESSION.query(Users).filter(func.lower(Users.username) == username.lower()).all()
-    finally:
-        SESSION.close()
-
-
-def get_name_by_userid(user_id):
-    try:
-        return SESSION.query(Users).get(Users.user_id == int(user_id)).first()
     finally:
         SESSION.close()
 
@@ -131,9 +125,10 @@ def get_all_chats():
         SESSION.close()
 
 
-def get_user_num_chats(user_id):
+def get_user_num_chats(user_id, is_channel):
     try:
-        return SESSION.query(ChatMembers).filter(ChatMembers.user == int(user_id)).count()
+        return SESSION.query(ChatMembers).filter(ChatMembers.user == int(user_id),
+                                                 ChatMembers.is_channel == is_channel).count()
     finally:
         SESSION.close()
 
@@ -172,15 +167,15 @@ def migrate_chat(old_chat_id, new_chat_id):
 ensure_bot_in_db()
 
 
-def del_user(user_id):
+def del_user(user_id, is_channel):
     with INSERTION_LOCK:
-        curr = SESSION.query(Users).get(user_id)
+        curr = SESSION.query(Users).filter(Users.user == int(user_id), Users.is_channel == is_channel).first()
         if curr:
             SESSION.delete(curr)
             SESSION.commit()
             return True
 
-        ChatMembers.query.filter(ChatMembers.user == user_id).delete()
+        ChatMembers.query.filter(ChatMembers.user == int(user_id), ChatMembers.is_channel == is_channel).delete()
         SESSION.commit()
         SESSION.close()
     return False

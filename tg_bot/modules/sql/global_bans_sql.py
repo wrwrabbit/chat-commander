@@ -68,7 +68,7 @@ def gban_user(user_id, is_channel, name, reason=None):
 def update_gban_reason(user_id, is_channel, name, reason=None):
     with GBANNED_USERS_LOCK:
         user = SESSION.query(GloballyBannedUsers).filter(GloballyBannedUsers.user_id == user_id,
-                                                         GloballyBannedUsers.is_channel == is_channel)
+                                                         GloballyBannedUsers.is_channel == is_channel).first()
         if not user:
             return None
         old_reason = user.reason
@@ -84,7 +84,7 @@ def update_gban_reason(user_id, is_channel, name, reason=None):
 def ungban_user(user_id, is_channel):
     with GBANNED_USERS_LOCK:
         user = SESSION.query(GloballyBannedUsers).filter(GloballyBannedUsers.user_id == user_id,
-                                                         GloballyBannedUsers.is_channel == is_channel)
+                                                         GloballyBannedUsers.is_channel == is_channel).first()
         if user:
             SESSION.delete(user)
 
@@ -99,7 +99,7 @@ def is_user_gbanned(user_id, is_channel):
 def get_gbanned_user(user_id, is_channel):
     try:
         return SESSION.query(GloballyBannedUsers).filter(GloballyBannedUsers.user_id == user_id,
-                                                         GloballyBannedUsers.is_channel == is_channel)
+                                                         GloballyBannedUsers.is_channel == is_channel).first()
     finally:
         SESSION.close()
 
