@@ -266,10 +266,7 @@ def info(bot: Bot, update: Update):
                         "That means I'm not allowed to ban/kick them."
 
     for mod in USER_INFO:
-        if "tg_bot.modules.users" not in str(mod):
-            mod_info = mod.__user_info__(user.id, is_channel).strip()
-        else:
-            mod_info = mod.__user_info__(user.id).strip()
+        mod_info = mod.__user_info__(user.id, is_channel).strip()
         if mod_info:
             text += "\n\n" + mod_info
 
@@ -333,8 +330,12 @@ def echo(bot: Bot, update: Update):
 # @run_async
 def gdpr(bot: Bot, update: Update):
     update.effective_message.reply_text("Deleting identifiable data...")
+    is_channel = update.effective_message.sender_chat is not None
     for mod in GDPR:
-        mod.__gdpr__(update.effective_user.id)
+        if not is_channel:
+            mod.__gdpr__(update.effective_user.id, is_channel)
+        else:
+            mod.__gdpr__(update.effective_message.sender_chat.id, is_channel)
 
     update.effective_message.reply_text("Your personal data has been deleted.\n\nNote that this will not unban "
                                         "you from any chats, as that is telegram data, not Marie data. "

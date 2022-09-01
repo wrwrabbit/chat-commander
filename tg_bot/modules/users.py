@@ -69,21 +69,20 @@ def broadcast(bot: Bot, update: Update):
 def log_user(bot: Bot, update: Update):
     chat = update.effective_chat  # type: Optional[Chat]
     msg = update.effective_message  # type: Optional[Message]
-
-    sql.update_user(msg.from_user.id,
-                    msg.from_user.username,
-                    chat.id,
-                    chat.title)
-
+    is_channel = msg.sender_chat is not None
+    if not is_channel:
+        sql.update_user(msg.from_user.id, is_channel, msg.from_user.username, chat.id, chat.title)
+    else:
+        sql.update_user(msg.sender_chat.id, is_channel, msg.sender_chat.username, chat.id, chat.title)
     if msg.reply_to_message:
-        sql.update_user(msg.reply_to_message.from_user.id,
-                        msg.reply_to_message.from_user.username,
-                        chat.id,
-                        chat.title)
-
+        repl_msg = msg.reply_to_message
+        is_channel = repl_msg.sender_chat is not None
+        if not is_channel:
+            sql.update_user(repl_msg.from_user.id, repl_msg.from_user.username, chat.id, chat.title)
+        else:
+            sql.update_user(repl_msg.sender_chat.id, is_channel, repl_msg.sender_chat.username, chat.id, chat.title)
     if msg.forward_from:
-        sql.update_user(msg.forward_from.id,
-                        msg.forward_from.username)
+        sql.update_user(msg.forward_from.id, msg.forward_from.username)
 
 
 # @run_async
@@ -99,10 +98,10 @@ def chats(bot: Bot, update: Update):
                                                 caption="Here is the list of chats in my database.")
 
 
-def __user_info__(user_id):
+def __user_info__(user_id, is_channel):
     if user_id == dispatcher.bot.id:
         return """I've seen them in... Wow. Are they stalking me? They're in all the same places I am... oh. It's me."""
-    num_chats = sql.get_user_num_chats(user_id)
+    num_chats = sql.get_user_num_chats(user_id, is_channel)
     return """I've seen them in <code>{}</code> chats in total.""".format(num_chats)
 
 
@@ -110,8 +109,8 @@ def __stats__():
     return "{} users, across {} chats".format(sql.num_users(), sql.num_chats())
 
 
-def __gdpr__(user_id):
-    sql.del_user(user_id)
+def __gdpr__(user_id, is_channel):
+    sql.del_user(user_id, is_channel)
 
 
 def __migrate__(old_chat_id, new_chat_id):
