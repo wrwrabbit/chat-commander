@@ -266,10 +266,7 @@ def info(bot: Bot, update: Update):
                         "That means I'm not allowed to ban/kick them."
 
     for mod in USER_INFO:
-        if "tg_bot.modules.users" not in str(mod):
-            mod_info = mod.__user_info__(user.id, is_channel).strip()
-        else:
-            mod_info = mod.__user_info__(user.id).strip()
+        mod_info = mod.__user_info__(user.id, is_channel).strip()
         if mod_info:
             text += "\n\n" + mod_info
 
