@@ -13,7 +13,8 @@ from tg_bot import dispatcher, BAN_STICKER
 from tg_bot.modules.disable import DisableAbleCommandHandler
 from tg_bot.modules.helper_funcs.chat_status import is_user_admin, bot_admin, user_admin_no_reply, user_admin, \
     can_restrict
-from tg_bot.modules.helper_funcs.extraction import extract_text, extract_user_and_text, extract_user
+from tg_bot.modules.helper_funcs.extraction import extract_text, extract_user_and_text, extract_user, \
+    extract_user_and_is_channel, extract_user_and_text_and_is_channel
 from tg_bot.modules.helper_funcs.filters import CustomFilters
 from tg_bot.modules.helper_funcs.misc import split_message
 from tg_bot.modules.helper_funcs.string_handling import split_quotes
@@ -25,8 +26,8 @@ CURRENT_WARNING_FILTER_STRING = "<b>Current warning filters in this chat:</b>\n"
 
 
 # Not async
-def warn(user: User, chat: Chat, reason: str, message: Message, warner: User = None) -> str:
-    if is_user_admin(chat, user.id):
+def warn(user_id, username, is_channel, chat: Chat, reason: str, message: Message, warner: User = None) -> str:
+    if is_user_admin(chat, user_id):
         message.reply_text("А с какой стати вы собрались предупреждать админа?")
         return ""
 
@@ -36,16 +37,19 @@ def warn(user: User, chat: Chat, reason: str, message: Message, warner: User = N
         warner_tag = "Автопредупреждение."
 
     limit, soft_warn = sql.get_warn_setting(chat.id)
-    num_warns, reasons = sql.warn_user(user.id, chat.id, reason)
+    num_warns, reasons = sql.warn_user(user_id, is_channel, chat.id, reason)
     if num_warns >= limit:
-        sql.reset_warns(user.id, chat.id)
-        if soft_warn:  # kick
-            chat.unban_member(user.id)
-            reply = "{} предупреждений, {} удален из чата".format(limit, mention_html(user.id, user.first_name))
-
-        else:  # ban
-            chat.ban_member(user.id)
-            reply = "{} предупреждений, {} забанен!".format(limit, mention_html(user.id, user.first_name))
+        sql.reset_warns(user_id, is_channel, chat.id)
+        if not is_channel:
+            if soft_warn:  # kick
+                chat.unban_member(user_id)
+                reply = "{} предупреждений, {} удален из чата".format(limit, mention_html(user_id, username))
+            else:  # ban
+                chat.ban_member(user_id)
+                reply = "{} предупреждений, {} забанен!".format(limit, mention_html(user_id, username))
+        else:
+            chat.ban_sender_chat(user_id)
+            reply = "{} предупреждений, {} забанен!".format(limit, mention_html(user_id, username))
 
         for warn_reason in reasons:
             reply += "\n - {}".format(html.escape(warn_reason))
@@ -56,18 +60,18 @@ def warn(user: User, chat: Chat, reason: str, message: Message, warner: User = N
                      "\n#WARN_BAN" \
                      "\n<b>Админ:</b> {}" \
                      "\n<b>Пользователь:</b> {} (<code>{}</code>)" \
-                     "\n<b>Причина:</b> {}"\
+                     "\n<b>Причина:</b> {}" \
                      "\n<b>Кол. предупреждений:</b> <code>{}/{}</code>".format(html.escape(chat.title),
-                                                                  warner_tag,
-                                                                  mention_html(user.id, user.first_name),
-                                                                  user.id, reason, num_warns, limit)
+                                                                               warner_tag,
+                                                                               mention_html(user_id, username),
+                                                                               user_id, reason, num_warns, limit)
 
     else:
         keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Аннулировать предупреждения", callback_data="rm_warn({})".format(user.id))]])
+            [[InlineKeyboardButton("Аннулировать предупреждения", callback_data="{},{}".format(user_id, is_channel))]])
 
-        reply = "У {} есть {}/{} предупреждений...".format(mention_html(user.id, user.first_name), num_warns,
-                                                             limit)
+        reply = "У {} есть {}/{} предупреждений...".format(mention_html(user_id, username), num_warns,
+                                                           limit)
         if reason:
             reply += "\nПричина последнего предупреждения:\n{}".format(html.escape(reason))
 
@@ -75,11 +79,11 @@ def warn(user: User, chat: Chat, reason: str, message: Message, warner: User = N
                      "\n#WARN" \
                      "\n<b>Админ:</b> {}" \
                      "\n<b>Пользователь:</b> {} (<code>{}</code>)" \
-                     "\n<b>Причина:</b> {}"\
+                     "\n<b>Причина:</b> {}" \
                      "\n<b>Кол. предуп.:</b> <code>{}/{}</code>".format(html.escape(chat.title),
-                                                                  warner_tag,
-                                                                  mention_html(user.id, user.first_name),
-                                                                  user.id, reason, num_warns, limit)
+                                                                        warner_tag,
+                                                                        mention_html(user_id, username),
+                                                                        user_id, reason, num_warns, limit)
 
     try:
         message.reply_text(reply, reply_markup=keyboard, parse_mode=ParseMode.HTML)
@@ -99,28 +103,36 @@ def warn(user: User, chat: Chat, reason: str, message: Message, warner: User = N
 def button(bot: Bot, update: Update) -> str:
     query = update.callback_query  # type: Optional[CallbackQuery]
     user = update.effective_user  # type: Optional[User]
-    match = re.match(r"rm_warn\((.+?)\)", query.data)
-    if match:
-        user_id = match.group(1)
-        chat = update.effective_chat  # type: Optional[Chat]
-        res = sql.remove_warn(user_id, chat.id)
-        if res:
-            update.effective_message.edit_text(
-                "Предупреждение удалил админ.",
-                parse_mode=ParseMode.HTML)
+    user_id, is_channel = (query.data.split(",")[0], query.data.split(",")[1])
+    chat = update.effective_chat  # type: Optional[Chat]
+    res = sql.remove_warn(user_id, is_channel, chat.id)
+    if res:
+        update.effective_message.edit_text(
+            "Предупреждение удалил админ.",
+            parse_mode=ParseMode.HTML)
+        if not is_channel:
             user_member = chat.get_member(user_id)
             return "<b>{}:</b>" \
                    "\n#UNWARN" \
                    "\n<b>Админ:</b> {}" \
                    "\n<b>Пользователь:</b> {} (<code>{}</code>)".format(html.escape(chat.title),
-                                                                mention_html(user.id, user.first_name),
-                                                                mention_html(user_member.user.id, user_member.user.first_name),
-                                                                user_member.user.id)
+                                                                        mention_html(user.id, user.first_name),
+                                                                        mention_html(user_member.user.id,
+                                                                                     user_member.user.first_name),
+                                                                        user_member.user.id)
         else:
-            update.effective_message.edit_text(
-                "У пользователя нет предупреждений.",
-                parse_mode=ParseMode.HTML)
-
+            return "<b>{}:</b>" \
+                   "\n#UNWARN" \
+                   "\n<b>Админ:</b> {}" \
+                   "\n<b>Пользователь:</b> {} (<code>{}</code>)".format(html.escape(chat.title),
+                                                                        mention_html(user.id, user.first_name),
+                                                                        mention_html(user_id,
+                                                                                     str(user_id)),
+                                                                        user_id)
+    else:
+        update.effective_message.edit_text(
+            "У пользователя нет предупреждений.",
+            parse_mode=ParseMode.HTML)
     return ""
 
 
@@ -134,13 +146,25 @@ def warn_user(bot: Bot, update: Update) -> str:
     chat = update.effective_chat  # type: Optional[Chat]
     warner = update.effective_user  # type: Optional[User]
 
-    user_id, reason = extract_user_and_text(message, args)
+    user_id, reason, is_channel = extract_user_and_text_and_is_channel(message, args)
 
     if user_id:
-        if message.reply_to_message and message.reply_to_message.from_user.id == user_id:
-            return warn(message.reply_to_message.from_user, chat, reason, message.reply_to_message, warner)
+        if not is_channel:
+            if message.reply_to_message and message.reply_to_message.from_user.id == user_id:
+                return warn(message.reply_to_message.from_user.id, message.reply_to_message.from_user.first_name,
+                            is_channel, chat, reason, message.reply_to_message, warner)
+            else:
+                return warn(chat.get_member(user_id).user.id, chat.get_member(user_id).user.first_name, is_channel,
+                            chat,
+                            reason, message, warner)
         else:
-            return warn(chat.get_member(user_id).user, chat, reason, message, warner)
+            if message.reply_to_message and message.reply_to_message.sender_chat.id == user_id:
+                return warn(message.reply_to_message.sender_chat.id, message.reply_to_message.sender_chat.username,
+                            is_channel, chat, reason, message.reply_to_message, warner)
+            else:
+                return warn(message.sender_chat.id, message.sender_chat.username, is_channel,
+                            chat,
+                            reason, message, warner)
     else:
         message.reply_text("Нет данных пользователя")
     return ""
@@ -156,19 +180,28 @@ def reset_warns(bot: Bot, update: Update) -> str:
     chat = update.effective_chat  # type: Optional[Chat]
     user = update.effective_user  # type: Optional[User]
 
-    user_id = extract_user(message, args)
+    user_id, is_channel = extract_user_and_is_channel(message, args)
 
     if user_id:
-        sql.reset_warns(user_id, chat.id)
+        sql.reset_warns(user_id, is_channel, chat.id)
         message.reply_text("Предупреждения аннулированы!")
-        warned = chat.get_member(user_id).user
-        return "<b>{}:</b>" \
-               "\n#RESETWARNS" \
-               "\n<b>Админ:</b> {}" \
-               "\n<b>Пользователь:</b> {} (<code>{}</code>)".format(html.escape(chat.title),
-                                                            mention_html(user.id, user.first_name),
-                                                            mention_html(warned.id, warned.first_name),
-                                                            warned.id)
+        if not is_channel:
+            warned = chat.get_member(user_id).user
+            return "<b>{}:</b>" \
+                   "\n#RESETWARNS" \
+                   "\n<b>Админ:</b> {}" \
+                   "\n<b>Пользователь:</b> {} (<code>{}</code>)".format(html.escape(chat.title),
+                                                                        mention_html(user.id, user.first_name),
+                                                                        mention_html(warned.id, warned.first_name),
+                                                                        warned.id)
+        else:
+            return "<b>{}:</b>" \
+                   "\n#RESETWARNS" \
+                   "\n<b>Админ:</b> {}" \
+                   "\n<b>Пользователь:</b> {} (<code>{}</code>)".format(html.escape(chat.title),
+                                                                        mention_html(user.id, user.first_name),
+                                                                        mention_html(user_id, str(user_id)),
+                                                                        user_id)
     else:
         message.reply_text("Нет данных пользователя")
     return ""
@@ -179,8 +212,8 @@ def warns(bot: Bot, update: Update):
     args = update.effective_message.text.split(" ")[1:]
     message = update.effective_message  # type: Optional[Message]
     chat = update.effective_chat  # type: Optional[Chat]
-    user_id = extract_user(message, args) or update.effective_user.id
-    result = sql.get_warns(user_id, chat.id)
+    user_id, is_channel = extract_user_and_is_channel(message, args) or (update.effective_user.id, False)
+    result = sql.get_warns(user_id, is_channel, chat.id)
 
     if result and result[0] != 0:
         num_warns, reasons = result
@@ -352,16 +385,19 @@ def set_warn_strength(bot: Bot, update: Update):
             return "<b>{}:</b>\n" \
                    "<b>Админ:</b> {}\n" \
                    "Включил строгий режим предупреждений. Нарушители будут забаннены.".format(html.escape(chat.title),
-                                                                            mention_html(user.id, user.first_name))
+                                                                                              mention_html(user.id,
+                                                                                                           user.first_name))
 
         elif args[0].lower() in ("off", "no"):
             sql.set_warn_strength(chat.id, True)
-            msg.reply_text("Сейчас чересчур много предупреждений приведут к удалению. Пользователи смогут вернуться в чат.")
+            msg.reply_text(
+                "Сейчас чересчур много предупреждений приведут к удалению. Пользователи смогут вернуться в чат.")
             return "<b>{}:</b>\n" \
                    "<b>Админ:</b> {}\n" \
-                   "Выключил строгий режим предупреждений. Нарушители будут просто удалены.".format(html.escape(chat.title),
-                                                                                  mention_html(user.id,
-                                                                                               user.first_name))
+                   "Выключил строгий режим предупреждений. Нарушители будут просто удалены.".format(
+                html.escape(chat.title),
+                mention_html(user.id,
+                             user.first_name))
 
         else:
             msg.reply_text("Я только принимаю on/yes/no/off!")
@@ -379,13 +415,14 @@ def set_warn_strength(bot: Bot, update: Update):
 def __stats__():
     return "Всего {} предупреждений, по {} чатам.\n" \
            "{} фильтров предупреждения, по {} чатам.".format(sql.num_warns(), sql.num_warn_chats(),
-                                                      sql.num_warn_filters(), sql.num_warn_filter_chats())
+                                                             sql.num_warn_filters(), sql.num_warn_filter_chats())
 
 
 def __import_data__(chat_id, data):
     for user_id, count in data.get('warns', {}).items():
         for x in range(int(count)):
-            sql.warn_user(user_id, chat_id)
+            # TODO replace False with code after realizing import and export
+            sql.warn_user(user_id, False, chat_id)
 
 
 def __migrate__(old_chat_id, new_chat_id):
@@ -416,15 +453,18 @@ __help__ = """
 __mod_name__ = "Предупреждения"
 
 WARN_HANDLER = CommandHandler("warn", warn_user, pass_args=True, filters=Filters.chat_type.groups)
-RESET_WARN_HANDLER = CommandHandler(["resetwarn", "resetwarns"], reset_warns, pass_args=True, filters=Filters.chat_type.groups)
+RESET_WARN_HANDLER = CommandHandler(["resetwarn", "resetwarns"], reset_warns, pass_args=True,
+                                    filters=Filters.chat_type.groups)
 CALLBACK_QUERY_HANDLER = CallbackQueryHandler(button, pattern=r"rm_warn")
 MYWARNS_HANDLER = DisableAbleCommandHandler("warns", warns, pass_args=True, filters=Filters.chat_type.groups)
 ADD_WARN_HANDLER = CommandHandler("addwarn", add_warn_filter, filters=Filters.chat_type.groups)
 RM_WARN_HANDLER = CommandHandler(["nowarn", "stopwarn"], remove_warn_filter, filters=Filters.chat_type.groups)
-LIST_WARN_HANDLER = DisableAbleCommandHandler(["warnlist", "warnfilters"], list_warn_filters, filters=Filters.chat_type.groups, admin_ok=True)
+LIST_WARN_HANDLER = DisableAbleCommandHandler(["warnlist", "warnfilters"], list_warn_filters,
+                                              filters=Filters.chat_type.groups, admin_ok=True)
 WARN_FILTER_HANDLER = MessageHandler(CustomFilters.has_text & Filters.chat_type.groups, reply_filter)
 WARN_LIMIT_HANDLER = CommandHandler("warnlimit", set_warn_limit, pass_args=True, filters=Filters.chat_type.groups)
-WARN_STRENGTH_HANDLER = CommandHandler("strongwarn", set_warn_strength, pass_args=True, filters=Filters.chat_type.groups)
+WARN_STRENGTH_HANDLER = CommandHandler("strongwarn", set_warn_strength, pass_args=True,
+                                       filters=Filters.chat_type.groups)
 
 dispatcher.add_handler(WARN_HANDLER)
 dispatcher.add_handler(CALLBACK_QUERY_HANDLER)

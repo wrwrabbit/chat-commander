@@ -10,18 +10,20 @@ class Warns(BASE):
     __tablename__ = "warns"
 
     user_id = Column(BigInteger, primary_key=True)
+    is_channel = Column(Boolean, primary_key=True)
     chat_id = Column(String(14), primary_key=True)
     num_warns = Column(BigInteger, default=0)
     reasons = Column(postgresql.ARRAY(UnicodeText))
 
-    def __init__(self, user_id, chat_id):
+    def __init__(self, user_id, is_channel, chat_id):
         self.user_id = user_id
+        self.is_channel = is_channel
         self.chat_id = str(chat_id)
         self.num_warns = 0
         self.reasons = []
 
     def __repr__(self):
-        return "<{} warns for {} in {} for reasons {}>".format(self.num_warns, self.user_id, self.chat_id, self.reasons)
+        return "<{} warns for {} is channel: {} in {} for reasons {}>".format(self.num_warns, self.user_id, self.is_channel, self.chat_id, self.reasons)
 
 
 class WarnFilters(BASE):
@@ -70,11 +72,11 @@ WARN_SETTINGS_LOCK = threading.RLock()
 WARN_FILTERS = {}
 
 
-def warn_user(user_id, chat_id, reason=None):
+def warn_user(user_id, is_channel, chat_id, reason=None):
     with WARN_INSERTION_LOCK:
-        warned_user = SESSION.query(Warns).get((user_id, str(chat_id)))
+        warned_user = SESSION.query(Warns).get((user_id, is_channel, str(chat_id)))
         if not warned_user:
-            warned_user = Warns(user_id, str(chat_id))
+            warned_user = Warns(user_id, is_channel, str(chat_id))
 
         warned_user.num_warns += 1
         if reason:
@@ -89,10 +91,10 @@ def warn_user(user_id, chat_id, reason=None):
         return num, reasons
 
 
-def remove_warn(user_id, chat_id):
+def remove_warn(user_id, is_channel, chat_id):
     with WARN_INSERTION_LOCK:
         removed = False
-        warned_user = SESSION.query(Warns).get((user_id, str(chat_id)))
+        warned_user = SESSION.query(Warns).get((user_id, is_channel, str(chat_id)))
 
         if warned_user and warned_user.num_warns > 0:
             warned_user.num_warns -= 1
@@ -105,9 +107,9 @@ def remove_warn(user_id, chat_id):
         return removed
 
 
-def reset_warns(user_id, chat_id):
+def reset_warns(user_id, is_channel, chat_id):
     with WARN_INSERTION_LOCK:
-        warned_user = SESSION.query(Warns).get((user_id, str(chat_id)))
+        warned_user = SESSION.query(Warns).get((user_id, is_channel, str(chat_id)))
         if warned_user:
             warned_user.num_warns = 0
             warned_user.reasons = []
@@ -117,9 +119,9 @@ def reset_warns(user_id, chat_id):
         SESSION.close()
 
 
-def get_warns(user_id, chat_id):
+def get_warns(user_id, is_channel, chat_id):
     try:
-        user = SESSION.query(Warns).get((user_id, str(chat_id)))
+        user = SESSION.query(Warns).get((user_id, is_channel, str(chat_id)))
         if not user:
             return None
         reasons = user.reasons
