@@ -78,11 +78,11 @@ def log_user(bot: Bot, update: Update):
         repl_msg = msg.reply_to_message
         is_channel = repl_msg.sender_chat is not None
         if not is_channel:
-            sql.update_user(repl_msg.from_user.id, repl_msg.from_user.username, chat.id, chat.title)
+            sql.update_user(repl_msg.from_user.id, is_channel, repl_msg.from_user.username, chat.id, chat.title)
         else:
             sql.update_user(repl_msg.sender_chat.id, is_channel, repl_msg.sender_chat.username, chat.id, chat.title)
     if msg.forward_from:
-        sql.update_user(msg.forward_from.id, msg.forward_from.username)
+        sql.update_user(msg.forward_from.id, is_channel, msg.forward_from.username)
 
 
 # @run_async
