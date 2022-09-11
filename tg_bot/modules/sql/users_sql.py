@@ -127,7 +127,7 @@ def get_all_chats():
 
 def get_user_num_chats(user_id, is_channel):
     try:
-        return SESSION.query(ChatMembers).filter(ChatMembers.user == int(user_id),
+        return SESSION.query(ChatMembers).filter(ChatMembers.user_id == int(user_id),
                                                  ChatMembers.is_channel == is_channel).count()
     finally:
         SESSION.close()
@@ -169,13 +169,13 @@ ensure_bot_in_db()
 
 def del_user(user_id, is_channel):
     with INSERTION_LOCK:
-        curr = SESSION.query(Users).filter(Users.user == int(user_id), Users.is_channel == is_channel).first()
+        curr = SESSION.query(Users).filter(Users.user_id == int(user_id), Users.is_channel == is_channel).first()
         if curr:
             SESSION.delete(curr)
             SESSION.commit()
             return True
 
-        ChatMembers.query.filter(ChatMembers.user == int(user_id), ChatMembers.is_channel == is_channel).delete()
+        ChatMembers.query.filter(ChatMembers.user_id == int(user_id), ChatMembers.is_channel == is_channel).delete()
         SESSION.commit()
         SESSION.close()
     return False
