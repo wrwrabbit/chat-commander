@@ -89,7 +89,7 @@ def extract_user_and_text_and_is_channel(message: Message, args: List[str]) -> (
 
         return None, None, None
 
-    return user_id, text, None
+    return user_id, text, False
 
 
 def id_from_reply(message):

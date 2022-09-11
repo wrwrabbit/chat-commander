@@ -335,8 +335,13 @@ def reply_filter(bot: Bot, update: Update) -> str:
         pattern = r"( |^|[^\w])" + re.escape(keyword) + r"( |$|[^\w])"
         if re.search(pattern, to_match, flags=re.IGNORECASE):
             user = update.effective_user  # type: Optional[User]
+            is_channel = update.effective_message.sender_chat is not None
             warn_filter = sql.get_warn_filter(chat.id, keyword)
-            return warn(user, chat, warn_filter.reply, message)
+            if not is_channel:
+                return warn(user.id, user.first_name, is_channel, chat, warn_filter.reply, message)
+            else:
+                return warn(update.effective_message.sender_chat.id, update.effective_message.sender_chat.username,
+                            is_channel, chat, warn_filter.reply, message)
     return ""
 
 
