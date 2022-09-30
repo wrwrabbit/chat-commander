@@ -173,7 +173,7 @@ def temp_ban(bot: Bot, update: Update) -> str:
     try:
         chat.ban_member(user_id, until_date=bantime)
         bot.send_sticker(chat.id, BAN_STICKER)  # banhammer marie sticker
-        message.reply_text("#бан_банан 🍌! Пользователь будут забанен на протяжении {}.".format(time_val))
+        message.reply_text("#бан_банан 🍌! Пользователь будет забанен на протяжении {}.".format(time_val))
         return log
 
     except BadRequest as excp:
