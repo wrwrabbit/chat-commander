@@ -117,7 +117,10 @@ def user_admin(func):
     @wraps(func)
     def is_admin(bot: Bot, update: Update, *args, **kwargs):
         user = update.effective_user  # type: Optional[User]
-        if user and is_user_admin(update.effective_chat, user.id, forward_from_chat=update.message.forward_from_chat):
+        forward_from_chat = None
+        if not update.message.text == '/setlog':
+            forward_from_chat = update.message.forward_from_chat
+        if user and is_user_admin(update.effective_chat, user.id, forward_from_chat=forward_from_chat):
             return func(bot, update, *args, **kwargs)
 
         elif not user:

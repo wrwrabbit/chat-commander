@@ -55,7 +55,7 @@ def set_about_bio(bot: Bot, update: Update):
             bio = text.split(None, 1)  # use python's maxsplit to only remove the cmd, hence keeping newlines.
             if len(bio) == 2:
                 if len(bio[1]) < MAX_MESSAGE_LENGTH // 4:
-                    sql.set_user_bio(user_id, bio[1])
+                    sql.set_user_bio(user_id, is_channel, bio[1])
                     message.reply_text("Updated {}'s bio!".format(repl_message.from_user.first_name))
                 else:
                     message.reply_text(
