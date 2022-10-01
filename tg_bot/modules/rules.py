@@ -20,7 +20,7 @@ def get_rules(bot: Bot, update: Update):
         update.effective_message.reply_text(rules, parse_mode=ParseMode.MARKDOWN)
     else:
         update.effective_message.reply_text("The group admins haven't set any rules for this chat yet. "
-                                            "This probably doesn't  mean it's lawless though...!")
+                                            "This probably doesn't mean it's lawless though...!")
 
 
 # @run_async
