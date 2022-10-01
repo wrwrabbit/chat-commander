@@ -68,7 +68,7 @@ def warn(user_id, username, is_channel, chat: Chat, reason: str, message: Messag
 
     else:
         keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("Аннулировать предупреждения", callback_data="{},{}".format(user_id, is_channel))]])
+            [[InlineKeyboardButton("Аннулировать предупреждения", callback_data="rm_warn({},{})".format(user_id, is_channel))]])
 
         reply = "У {} есть {}/{} предупреждений...".format(mention_html(user_id, username), num_warns,
                                                            limit)
@@ -103,7 +103,8 @@ def warn(user_id, username, is_channel, chat: Chat, reason: str, message: Messag
 def button(bot: Bot, update: Update) -> str:
     query = update.callback_query  # type: Optional[CallbackQuery]
     user = update.effective_user  # type: Optional[User]
-    user_id, is_channel = (query.data.split(",")[0], query.data.split(",")[1])
+    data = query.data[8:-1]
+    user_id, is_channel = (int(data.split(",")[0]), data.split(",")[1] == 'True')
     chat = update.effective_chat  # type: Optional[Chat]
     res = sql.remove_warn(user_id, is_channel, chat.id)
     if res:
@@ -151,20 +152,17 @@ def warn_user(bot: Bot, update: Update) -> str:
     if user_id:
         if not is_channel:
             if message.reply_to_message and message.reply_to_message.from_user.id == user_id:
-                return warn(message.reply_to_message.from_user.id, message.reply_to_message.from_user.first_name,
-                            is_channel, chat, reason, message.reply_to_message, warner)
+                return warn(user_id, message.reply_to_message.from_user.first_name, is_channel, chat, reason,
+                            message.reply_to_message, warner)
             else:
-                return warn(chat.get_member(user_id).user.id, chat.get_member(user_id).user.first_name, is_channel,
-                            chat,
-                            reason, message, warner)
+                return warn(user_id, chat.get_member(user_id).user.first_name, is_channel, chat, reason, message,
+                            warner)
         else:
             if message.reply_to_message and message.reply_to_message.sender_chat.id == user_id:
-                return warn(message.reply_to_message.sender_chat.id, message.reply_to_message.sender_chat.username,
-                            is_channel, chat, reason, message.reply_to_message, warner)
+                return warn(user_id, message.reply_to_message.sender_chat.username, is_channel, chat, reason,
+                            message.reply_to_message, warner)
             else:
-                return warn(message.sender_chat.id, message.sender_chat.username, is_channel,
-                            chat,
-                            reason, message, warner)
+                return warn(user_id, message.sender_chat.username, is_channel, chat, reason, message, warner)
     else:
         message.reply_text("Нет данных пользователя")
     return ""

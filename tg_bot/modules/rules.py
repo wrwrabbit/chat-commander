@@ -15,40 +15,12 @@ from tg_bot.modules.helper_funcs.string_handling import markdown_parser
 # @run_async
 def get_rules(bot: Bot, update: Update):
     chat_id = update.effective_chat.id
-    send_rules(update, chat_id)
-
-
-# Do not async - not from a handler
-def send_rules(update, chat_id, from_pm=False):
-    bot = dispatcher.bot
-    user = update.effective_user  # type: Optional[User]
-    try:
-        chat = bot.get_chat(chat_id)
-    except BadRequest as excp:
-        if excp.message == "Chat not found" and from_pm:
-            bot.send_message(user.id, "The rules shortcut for this chat hasn't been set properly! Ask admins to "
-                                      "fix this.")
-            return
-        else:
-            raise
-
     rules = sql.get_rules(chat_id)
-    text = "The rules for *{}* are:\n\n{}".format(escape_markdown(chat.title), rules)
-
-    if from_pm and rules:
-        bot.send_message(user.id, text, parse_mode=ParseMode.MARKDOWN)
-    elif from_pm:
-        bot.send_message(user.id, "The group admins haven't set any rules for this chat yet. "
-                                  "This probably doesn't mean it's lawless though...!")
-    elif rules:
-        update.effective_message.reply_text("Contact me in PM to get this group's rules.",
-                                            reply_markup=InlineKeyboardMarkup(
-                                                [[InlineKeyboardButton(text="Rules",
-                                                                       url="t.me/{}?start={}".format(bot.username,
-                                                                                                     chat_id))]]))
+    if rules:
+        update.effective_message.reply_text(rules, parse_mode=ParseMode.MARKDOWN)
     else:
         update.effective_message.reply_text("The group admins haven't set any rules for this chat yet. "
-                                            "This probably doesn't mean it's lawless though...!")
+                                            "This probably doesn't  mean it's lawless though...!")
 
 
 # @run_async
