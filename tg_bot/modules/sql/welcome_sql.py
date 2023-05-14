@@ -3,7 +3,7 @@ import threading
 from sqlalchemy import Column, String, Boolean, UnicodeText, BigInteger
 
 from tg_bot.modules.helper_funcs.msg_types import Types
-from tg_bot.modules.sql import SESSION, BASE
+from tg_bot.modules.sql import SESSION, BASE, ENGINE
 
 DEFAULT_WELCOME = "Hey {first}, how are you?"
 DEFAULT_GOODBYE = "Nice knowing ya!"
@@ -62,9 +62,9 @@ class GoodbyeButtons(BASE):
         self.same_line = same_line
 
 
-Welcome.__table__.create(checkfirst=True)
-WelcomeButtons.__table__.create(checkfirst=True)
-GoodbyeButtons.__table__.create(checkfirst=True)
+Welcome.__table__.create(checkfirst=True, bind=ENGINE)
+WelcomeButtons.__table__.create(checkfirst=True, bind=ENGINE)
+GoodbyeButtons.__table__.create(checkfirst=True, bind=ENGINE)
 
 INSERTION_LOCK = threading.RLock()
 WELC_BTN_LOCK = threading.RLock()

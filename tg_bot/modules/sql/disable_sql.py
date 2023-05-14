@@ -2,7 +2,7 @@ import threading
 
 from sqlalchemy import Column, String, UnicodeText, func, distinct
 
-from tg_bot.modules.sql import SESSION, BASE
+from tg_bot.modules.sql import SESSION, BASE, ENGINE
 
 
 class Disable(BASE):
@@ -18,7 +18,7 @@ class Disable(BASE):
         return "Disabled cmd {} in {}".format(self.command, self.chat_id)
 
 
-Disable.__table__.create(checkfirst=True)
+Disable.__table__.create(checkfirst=True, bind=ENGINE)
 DISABLE_INSERTION_LOCK = threading.RLock()
 
 DISABLED = {}

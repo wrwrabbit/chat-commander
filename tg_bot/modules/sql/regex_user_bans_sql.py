@@ -2,7 +2,7 @@ import threading
 
 from sqlalchemy import Column, BigInteger, UnicodeText
 
-from tg_bot.modules.sql import SESSION, BASE
+from tg_bot.modules.sql import SESSION, BASE, ENGINE
 
 
 class RegexUserBan(BASE):
@@ -18,6 +18,7 @@ class RegexUserBan(BASE):
     def __repr__(self):
         return "<Ban regex %s> " % self.regex_to_ban,
 
+
 class RegexUserGlobalBan(BASE):
     __tablename__ = "global_user_regex_ban"
     id = Column(BigInteger, primary_key=True)
@@ -30,11 +31,32 @@ class RegexUserGlobalBan(BASE):
         return "<User global regex ban regex_to_ban %s>" % self.regex_to_ban
 
 
-RegexUserBan.__table__.create(checkfirst=True)
-RegexUserGlobalBan.__table__.create(checkfirst=True)
+class UserBanExclusion(BASE):
+    __tablename__ = "user_ban_exclusion"
+    id = Column(BigInteger, primary_key=True)
+    username_to_exclude = Column(UnicodeText)
+
+    def __init__(self, username_to_exclude):
+        self.username_to_exclude = username_to_exclude
+
+    def __repr__(self):
+        return "<User ban exclusion %s>" % self.username_to_exclude
+
+
+RegexUserBan.__table__.create(checkfirst=True, bind=ENGINE)
+RegexUserGlobalBan.__table__.create(checkfirst=True, bind=ENGINE)
+UserBanExclusion.__table__.create(checkfirst=True, bind=ENGINE)
 
 REGEX_BAN_INSERTION_LOCK = threading.RLock()
 REGEX_GLOBAL_BAN_INSERTION_LOCK = threading.RLock()
+USER_BAN_EXCLUSION_LOCK = threading.RLock()
+
+
+def add_ban_exclusion(username_to_exclude):
+    with USER_BAN_EXCLUSION_LOCK:
+        user_ban_exclusion = UserBanExclusion(username_to_exclude)
+        SESSION.merge(user_ban_exclusion)
+        SESSION.commit()
 
 
 def add_regex_bans(chat_id, regex_to_ban):
@@ -52,19 +74,46 @@ def get_regex_bans(chat_id):
     return []
 
 
+def get_ban_exclusions():
+    result = SESSION.query(UserBanExclusion).all()
+    SESSION.close()
+    if result:
+        return result
+    return []
+
+
 def is_regex_ban_exists(chat_id, regex_to_ban):
     is_exists = SESSION.query(RegexUserBan).filter(RegexUserBan.chat_id == chat_id,
-                                                 RegexUserBan.regex_to_ban == regex_to_ban).first() is not None
+                                                   RegexUserBan.regex_to_ban == regex_to_ban).first() is not None
+    SESSION.close()
+    return is_exists
+
+
+def is_ban_exclusion_exists(username):
+    is_exists = SESSION.query(RegexUserBan).filter(UserBanExclusion.username_to_exclude == username).first() is not None
     SESSION.close()
     return is_exists
 
 
 def delete_regex_ban(chat_id, regex_to_ban):
     with REGEX_BAN_INSERTION_LOCK:
-        regex_ban = SESSION.query(RegexUserBan).filter(RegexUserBan.chat_id == chat_id, 
+        regex_ban = SESSION.query(RegexUserBan).filter(RegexUserBan.chat_id == chat_id,
                                                        RegexUserBan.regex_to_ban == regex_to_ban).first()
         if regex_ban:
             SESSION.delete(regex_ban)
+            SESSION.commit()
+            return True
+        SESSION.close()
+    return False
+
+
+def delete_ban_exclusion(username_to_exclude):
+    with USER_BAN_EXCLUSION_LOCK:
+        user_ban_exclusion = SESSION.query(UserBanExclusion).filter(
+            UserBanExclusion.username_to_exclude == username_to_exclude
+        ).first()
+        if user_ban_exclusion:
+            SESSION.delete(user_ban_exclusion)
             SESSION.commit()
             return True
         SESSION.close()
@@ -94,7 +143,8 @@ def get_regex_global_bans():
 
 def delete_regex_global_ban(regex_global_ban):
     with REGEX_GLOBAL_BAN_INSERTION_LOCK:
-        regex_global_ban = SESSION.query(RegexUserGlobalBan).filter(RegexUserGlobalBan.regex_to_ban == regex_global_ban).first()
+        regex_global_ban = SESSION.query(RegexUserGlobalBan).filter(
+            RegexUserGlobalBan.regex_to_ban == regex_global_ban).first()
         if regex_global_ban:
             SESSION.delete(regex_global_ban)
             SESSION.commit()
