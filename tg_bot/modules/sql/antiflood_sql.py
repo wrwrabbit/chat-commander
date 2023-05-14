@@ -2,7 +2,7 @@ import threading
 
 from sqlalchemy import Column, BigInteger, String
 
-from tg_bot.modules.sql import BASE, SESSION
+from tg_bot.modules.sql import BASE, SESSION, ENGINE
 
 DEF_COUNT = 0
 DEF_LIMIT = 0
@@ -21,7 +21,7 @@ class FloodControl(BASE):
         return "<flood control for %s>" % self.chat_id
 
 
-FloodControl.__table__.create(checkfirst=True)
+FloodControl.__table__.create(checkfirst=True, bind=ENGINE)
 
 INSERTION_LOCK = threading.RLock()
 

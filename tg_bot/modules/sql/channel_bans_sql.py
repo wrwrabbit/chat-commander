@@ -2,7 +2,7 @@ import threading
 
 from sqlalchemy import Column, BigInteger, UnicodeText
 
-from tg_bot.modules.sql import SESSION, BASE
+from tg_bot.modules.sql import SESSION, BASE, ENGINE
 
 
 class ChannelBan(BASE):
@@ -31,8 +31,8 @@ class ChannelGlobalBan(BASE):
         return "<Channel ban channel_to_ban %d>" % self.channel_to_ban
 
 
-ChannelBan.__table__.create(checkfirst=True)
-ChannelGlobalBan.__table__.create(checkfirst=True)
+ChannelBan.__table__.create(checkfirst=True, bind=ENGINE)
+ChannelGlobalBan.__table__.create(checkfirst=True, bind=ENGINE)
 
 CHANNEL_BAN_INSERTION_LOCK = threading.RLock()
 CHANNEL_GLOBAL_BAN_INSERTION_LOCK = threading.RLock()

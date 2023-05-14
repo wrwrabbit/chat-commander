@@ -2,7 +2,7 @@ import threading
 
 from sqlalchemy import Column, BigInteger, UnicodeText
 
-from tg_bot.modules.sql import SESSION, BASE
+from tg_bot.modules.sql import SESSION, BASE, ENGINE
 
 
 class RegexNameBan(BASE):
@@ -30,8 +30,8 @@ class RegexNameGlobalBan(BASE):
         return "<Name global regex ban regex_to_ban %s>" % self.regex_to_ban
 
 
-RegexNameBan.__table__.create(checkfirst=True)
-RegexNameGlobalBan.__table__.create(checkfirst=True)
+RegexNameBan.__table__.create(checkfirst=True, bind=ENGINE)
+RegexNameGlobalBan.__table__.create(checkfirst=True, bind=ENGINE)
 
 REGEX_BAN_INSERTION_LOCK = threading.RLock()
 REGEX_GLOBAL_BAN_INSERTION_LOCK = threading.RLock()

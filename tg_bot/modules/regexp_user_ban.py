@@ -17,6 +17,19 @@ from tg_bot.modules.log_channel import loggable
 from tg_bot.modules.sql import users_sql
 from tg_bot.modules.sql import regex_user_bans_sql as sql
 
+
+@user_admin
+@bot_can_delete
+@loggable
+def user_ban_add_exclusion(bot: Bot, update: Update) -> str:
+    args = update.effective_message.text.split(" ")[1:]
+    username = args[0]
+    if username is None:
+        update.effective_message.reply_text("Username value is missing")
+        return
+    sql.add_ban_exclusion(username)
+    update.effective_message.reply_text("Username " + username + " was added to ban exclusions")
+
 @user_admin
 @bot_can_delete
 @loggable
@@ -34,6 +47,16 @@ def userregexpadd(bot: Bot, update: Update) -> str:
 
 @user_admin
 @loggable
+def user_ban_exclusion_list(bot: Bot, update: Update):
+    res = sql.get_ban_exclusions()
+    if res is not None:
+        res = list(map(lambda x: x.username_to_exclude, res))
+        update.effective_message.reply_text("User ban exclusions: " + ','.join(res))
+    elif res is [] or res is None:
+        update.effective_message.reply_text("There are no user ban exclusions")
+
+@user_admin
+@loggable
 def userregexplist(bot: Bot, update: Update):
     res = sql.get_regex_bans(update.effective_chat.id)
     if res is not None:
@@ -41,6 +64,18 @@ def userregexplist(bot: Bot, update: Update):
         update.effective_message.reply_text("Regexp banned in this chat: " + ','.join(res))
     elif res is [] or res is None:
         update.effective_message.reply_text("There are no regexp in ban")
+
+# @run_async
+@user_admin
+@loggable
+def user_ban_delete_exclusion(bot: Bot, update: Update):
+    args = update.effective_message.text.split(" ")[1:]
+    username = args[0]
+    if username is None:
+        update.effective_message.reply_text("Username value is missing")
+        return
+    sql.delete_ban_exclusion(username)
+    update.effective_message.reply_text("Username " + username + " was removed from ban exclusions")
 
 # @run_async
 @user_admin
@@ -113,6 +148,8 @@ def remove_banned_nicknames(bot: Bot, update: Update):
 
     if joined_names is not None:
         for name in joined_names:
+            if sql.is_ban_exclusion_exists(name):
+                continue
             for regex in regexes:
                 is_banned = re.match(regex, name.username)
 
@@ -146,6 +183,10 @@ __help__ = """
  - /g\_user\_regexpban\_add [регулярное выражение] - добавить регулярное выражение
  - /g\_user\_regexpban\_list - список глобальных регулярных выражений
  - /g\_user\_regexpban\_del [регулярное выражение] - удалить глобальное регулярное выражение. Не разблокирует уже забаненных пользователей.
+ 
+ - /user\_ban\_add\_exclusion [username] - добавить username
+ - /user\_ban\_exclusion\_list - список username
+ - /user\_ban\_delete\_exclusion [username] - удалить username
 
 Например: блокировать имена, состящие из минимум трёх и более букв подряд и двух цифр (sdf11, dfsd87): `/regexpuserban ^[a-zA-Z]{3,}[0-9]{2}$` Если в имени \
 две буквы (aa11), три цифры (aaaa111), среди букв есть лишняя цифра(aa1a11), они не будут заблокированы.
@@ -157,6 +198,10 @@ REGEXPUSERBAN_HANDLER = CommandHandler("user_regexpban_add", userregexpadd, pass
 LISTREGEXPUSERBAN_HANDLER = CommandHandler("user_regexpban_list", userregexplist, pass_args=False, filters=Filters.chat_type.groups)
 UNBANREGEXPUSERBAN_HANDLER = CommandHandler("user_regexpban_del", userregexpdelete, pass_args=True, filters=Filters.chat_type.groups)
 
+ADD_BAN_EXCLUSION_HANDLER = CommandHandler("user_ban_add_exclusion", user_ban_add_exclusion, pass_args=True, filters=Filters.chat_type.groups)
+LIST_BAN_EXCLUSION_HANDLER = CommandHandler("user_ban_exclusion_list", user_ban_exclusion_list, pass_args=False, filters=Filters.chat_type.groups)
+DELETE_BAN_EXCLUSION_HANDLER = CommandHandler("user_ban_delete_exclusion", user_ban_delete_exclusion, pass_args=True, filters=Filters.chat_type.groups)
+
 G_REGEXPUSERBAN_HANDLER = CommandHandler("g_user_regexpban_add", g_userregexpadd, pass_args=True, filters=Filters.chat_type.groups)
 G_LISTREGEXPUSERBAN_HANDLER = CommandHandler("g_user_regexpban_list", g_userregexplist, pass_args=False, filters=Filters.chat_type.groups)
 G_UNBANREGEXPUSERBAN_HANDLER = CommandHandler("g_user_regexpban_del", g_userregexpdelete, pass_args=True, filters=Filters.chat_type.groups)
@@ -164,6 +209,10 @@ G_UNBANREGEXPUSERBAN_HANDLER = CommandHandler("g_user_regexpban_del", g_userrege
 dispatcher.add_handler(REGEXPUSERBAN_HANDLER)
 dispatcher.add_handler(LISTREGEXPUSERBAN_HANDLER)
 dispatcher.add_handler(UNBANREGEXPUSERBAN_HANDLER)
+
+dispatcher.add_handler(ADD_BAN_EXCLUSION_HANDLER)
+dispatcher.add_handler(LIST_BAN_EXCLUSION_HANDLER)
+dispatcher.add_handler(DELETE_BAN_EXCLUSION_HANDLER)
 
 dispatcher.add_handler(G_REGEXPUSERBAN_HANDLER)
 dispatcher.add_handler(G_LISTREGEXPUSERBAN_HANDLER)

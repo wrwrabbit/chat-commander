@@ -3,7 +3,7 @@ from typing import Union
 
 from sqlalchemy import Column, BigInteger, String, Boolean
 
-from tg_bot.modules.sql import SESSION, BASE
+from tg_bot.modules.sql import SESSION, BASE, ENGINE
 
 
 class ReportingUserSettings(BASE):
@@ -30,8 +30,8 @@ class ReportingChatSettings(BASE):
         return "<Chat report settings ({})>".format(self.chat_id)
 
 
-ReportingUserSettings.__table__.create(checkfirst=True)
-ReportingChatSettings.__table__.create(checkfirst=True)
+ReportingUserSettings.__table__.create(checkfirst=True, bind=ENGINE)
+ReportingChatSettings.__table__.create(checkfirst=True, bind=ENGINE)
 
 CHAT_LOCK = threading.RLock()
 USER_LOCK = threading.RLock()
