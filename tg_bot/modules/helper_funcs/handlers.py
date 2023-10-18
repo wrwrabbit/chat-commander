@@ -11,8 +11,7 @@ class CustomCommandHandler(tg.CommandHandler):
         super().__init__(command, callback, **kwargs)
 
     def check_update(self, update):
-        if (isinstance(update, Update)
-                and (update.message or update.edited_message and self.allow_edited)):
+        if isinstance(update, Update) and (update.message or update.edited_message):
             message = update.message or update.edited_message
 
             if message.text and len(message.text) > 1:
