@@ -1,3 +1,4 @@
+aiogram
 future
 emoji==1.7.0
 requests

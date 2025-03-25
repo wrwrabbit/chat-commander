@@ -41,7 +41,7 @@ if ENV:
     DONATION_LINK = os.environ.get('DONATION_LINK')
     LOAD = os.environ.get("LOAD", "").split()
     NO_LOAD = os.environ.get("NO_LOAD", "translation").split()
-    DEL_CMDS = eval(os.environ.get('DEL_CMDS', False))
+    DEL_CMDS = bool(os.environ.get('DEL_CMDS', False))
     STRICT_GBAN = bool(os.environ.get('STRICT_GBAN', False))
     BAN_STICKER = os.environ.get('BAN_STICKER', 'CAADAgADOwADPPEcAXkko5EB3YGYAg')
     ALLOW_EXCL = os.environ.get('ALLOW_EXCL', False)
@@ -64,9 +64,12 @@ if sys.version_info[0] < 3 or sys.version_info[1] < 6:
 
 SUDO_USERS.add(OWNER_ID)
 
-application = tg.Application.builder().token(TOKEN).concurrent_updates(True).build()
-
-dispatcher = updater.dispatcher
+application = (tg.Application.builder().
+               token(TOKEN).
+               concurrent_updates(True).
+               get_updates_timeout(15).
+               pool_timeout(4).
+               build())
 
 SUDO_USERS = list(SUDO_USERS)
 WHITELIST_USERS = list(WHITELIST_USERS)

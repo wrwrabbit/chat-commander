@@ -1,16 +1,18 @@
-import datetime
+from aiogram import BaseMiddleware, Dispatcher
+import asyncio
+from datetime import datetime, timedelta
 import importlib
 import re
-from typing import Optional, List
+from typing import Optional
 
 from telegram import Message, Chat, Update, Bot, User
-from telegram import ParseMode, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.error import Unauthorized, BadRequest, TimedOut, NetworkError, ChatMigrated, TelegramError
-from telegram.ext import CommandHandler, Filters, MessageHandler, CallbackQueryHandler
-from telegram.ext.dispatcher import run_async, DispatcherHandlerStop, Dispatcher
-from telegram.utils.helpers import escape_markdown
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.constants import ParseMode, ChatType
+from telegram.error import BadRequest, TimedOut, NetworkError, ChatMigrated, TelegramError, Forbidden
+from telegram.ext import ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler
+from telegram.helpers import escape_markdown
 
-from tg_bot import dispatcher, updater, TOKEN, WEBHOOK, OWNER_ID, DONATION_LINK, CERT_PATH, PORT, URL, LOGGER, \
+from tg_bot import application, TOKEN, WEBHOOK, OWNER_ID, DONATION_LINK, CERT_PATH, PORT, URL, LOGGER, \
     ALLOW_EXCL
 # needed to dynamically load modules
 # NOTE: Module order is not guaranteed, specify that in the config file!
@@ -49,7 +51,7 @@ the things I can help you with.
 
 {}
 And the following:
-""".format(dispatcher.bot.first_name, "" if not ALLOW_EXCL else "\nAll commands can either be used with / or !.\n")
+""".format(application.bot.first_name, "" if not ALLOW_EXCL else "\nAll commands can either be used with / or !.\n")
 
 DONATE_STRING = DONATION_LINK
 
@@ -105,78 +107,78 @@ for module_name in ALL_MODULES:
         USER_SETTINGS[imported_module.__mod_name__.lower()] = imported_module
 
 
-# do not async
-def send_help(chat_id, text, keyboard=None):
+async def send_help(chat_id, text, keyboard=None):
     if not keyboard:
         keyboard = InlineKeyboardMarkup(paginate_modules(0, HELPABLE, "help"))
-    dispatcher.bot.send_message(chat_id=chat_id,
+    await application.bot.send_message(chat_id=chat_id,
                                 text=text,
                                 parse_mode=ParseMode.MARKDOWN,
                                 reply_markup=keyboard)
 
 
-def test(bot: Bot, update: Update):
+async def test(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     # pprint(eval(str(update)))
-    # update.effective_message.reply_text("Hola tester! _I_ *have* `markdown`", parse_mode=ParseMode.MARKDOWN)
-    update.effective_message.reply_text("This person edited a message")
+    await update.effective_message.reply_text(r"Hola tester\! \_I\_ \*have\* \`markdown\`", parse_mode=ParseMode.MARKDOWN_V2)
+    # await update.effective_message.reply_text("This person edited a message")
     print(update.effective_message)
 
 
 
-def start(bot: Bot, update: Update):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     args = update.effective_message.text.split(" ")[1:]
-    if update.effective_chat.type == "private":
+    if update.effective_chat.type == ChatType.PRIVATE:
         if len(args) >= 1:
             if args[0].lower() == "help":
-                send_help(update.effective_chat.id, HELP_STRINGS)
+                await send_help(update.effective_chat.id, HELP_STRINGS)
 
             elif args[0].lower().startswith("stngs_"):
                 match = re.match("stngs_(.*)", args[0].lower())
-                chat = dispatcher.bot.getChat(match.group(1))
+                chat = await context.bot.get_сhat(match.group(1))
 
                 if is_user_admin(chat, update.effective_user.id):
-                    send_settings(match.group(1), update.effective_user.id, False)
+                    await send_settings(context, match.group(1), update.effective_user.id, False)
                 else:
-                    send_settings(match.group(1), update.effective_user.id, True)
+                    await send_settings(context, match.group(1), update.effective_user.id, True)
 
             elif args[0][1:].isdigit() and "rules" in IMPORTED:
-                IMPORTED["rules"].send_rules(update, args[0], from_pm=True)
+                await IMPORTED["rules"].send_rules(update, args[0], from_pm=True)
 
         else:
             first_name = update.effective_user.first_name
-            update.effective_message.reply_text(
-                PM_START_TEXT.format(escape_markdown(first_name), escape_markdown(bot.first_name), OWNER_ID),
-                parse_mode=ParseMode.MARKDOWN)
+            await update.effective_message.reply_text(
+                PM_START_TEXT.format(escape_markdown(first_name), escape_markdown(context.bot.first_name), OWNER_ID),
+                parse_mode=ParseMode.MARKDOWN_V2)
     else:
-        update.effective_message.reply_text("Yo, whadup?")
+        await update.effective_message.reply_text("Yo, whadup?")
 
 
 # for test purposes
-def error_callback(bot, update, error):
+async def error_callback(_: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    error = context.error
+
     try:
         raise error
-    except Unauthorized:
-        print("no nono1")
-        print(error)
+    except Forbidden:
+        print("Forbidden")
+        print(f"Детали: {error}")
         # remove update.message.chat_id from conversation list
     except BadRequest:
-        print("no nono2")
         print("BadRequest caught")
-        print(error)
-
+        print(f"Детали: {error}")
         # handle malformed requests - read more below!
     except TimedOut:
-        print("no nono3")
+        print("TimedOut")
         # handle slow connection problems
     except NetworkError:
-        print("no nono4")
+        print("NetworkError")
         # handle other connection problems
     except ChatMigrated as err:
-        print("no nono5")
-        print(err)
+        print(f"ChatMigrated : {err.new_chat_id}")
+        print(f"Детали: {err}")
         # the chat_id of a group has changed, use e.new_chat_id instead
     except TelegramError:
-        print(error)
+        print("TelegramError")
+        print(f"Детали: {error}")
         # handle all other telegram related errors
 
 
@@ -258,30 +260,30 @@ def get_help(bot: Bot, update: Update):
         send_help(chat.id, HELP_STRINGS)
 
 
-def send_settings(chat_id, user_id, user=False):
+async def send_settings(context: ContextTypes.DEFAULT_TYPE, chat_id, user_id, user=False):
     if user:
         if USER_SETTINGS:
             settings = "\n\n".join(
                 "*{}*:\n{}".format(mod.__mod_name__, mod.__user_settings__(user_id)) for mod in USER_SETTINGS.values())
-            dispatcher.bot.send_message(user_id, "These are your current settings:" + "\n\n" + settings,
-                                        parse_mode=ParseMode.MARKDOWN)
+            await context.bot.send_message(user_id, "These are your current settings:" + "\n\n" + settings,
+                                        parse_mode=ParseMode.MARKDOWN_V2)
 
         else:
-            dispatcher.bot.send_message(user_id, "Seems like there aren't any user specific settings available :'(",
-                                        parse_mode=ParseMode.MARKDOWN)
+            await context.bot.send_message(user_id, "Seems like there aren't any user specific settings available :'(",
+                                        parse_mode=ParseMode.MARKDOWN_V2)
 
     else:
         if CHAT_SETTINGS:
-            chat_name = dispatcher.bot.getChat(chat_id).title
-            dispatcher.bot.send_message(user_id,
+            chat = await context.bot.getChat(chat_id).title
+            await context.bot.send_message(user_id,
                                         text="Which module would you like to check {}'s settings for?".format(
-                                            chat_name),
+                                            chat.title),
                                         reply_markup=InlineKeyboardMarkup(
                                             paginate_modules(0, CHAT_SETTINGS, "stngs", chat=chat_id)))
         else:
-            dispatcher.bot.send_message(user_id, "Seems like there aren't any chat settings available :'(\nSend this "
+            await context.bot.send_message(user_id, "Seems like there aren't any chat settings available :'(\nSend this "
                                                  "in a group chat you're admin in to find its current settings!",
-                                        parse_mode=ParseMode.MARKDOWN)
+                                        parse_mode=ParseMode.MARKDOWN_V2)
 
 
 
@@ -391,7 +393,7 @@ def donate(bot: Bot, update: Update):
             bot.send_message(user.id, DONATE_STRING, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
 
             update.effective_message.reply_text("Я скинул вам ссылку с информацией как нам можно присылать донаты.")
-        except Unauthorized:
+        except Forbidden:
             update.effective_message.reply_text("Напишите мне /donate в личном сообщении.")
 
 
@@ -411,116 +413,77 @@ def migrate_chats(bot: Bot, update: Update):
         mod.__migrate__(old_chat, new_chat)
 
     LOGGER.info("Successfully migrated!")
-    raise DispatcherHandlerStop
+    return
 
 
-def main():
+async def main():
     test_handler = CommandHandler("test", test)
-    start_handler = CommandHandler("start", start, pass_args=True)
+    #start_handler = CommandHandler("start", start, pass_args=True)
 
-    help_handler = CommandHandler("help", get_help)
-    help_callback_handler = CallbackQueryHandler(help_button, pattern=r"help_")
+    #help_handler = CommandHandler("help", get_help)
+    #help_callback_handler = CallbackQueryHandler(help_button, pattern=r"help_")
 
-    settings_handler = CommandHandler("settings", get_settings)
-    settings_callback_handler = CallbackQueryHandler(settings_button, pattern=r"stngs_")
+    #settings_handler = CommandHandler("settings", get_settings)
+    #settings_callback_handler = CallbackQueryHandler(settings_button, pattern=r"stngs_")
 
-    donate_handler = CommandHandler("donate", donate)
-    migrate_handler = MessageHandler(Filters.status_update.migrate, migrate_chats)
+    #donate_handler = CommandHandler("donate", donate)
+    #migrate_handler = MessageHandler(Filters.status_update.migrate, migrate_chats)
 
-    # dispatcher.add_handler(test_handler)
-    dispatcher.add_handler(start_handler)
-    dispatcher.add_handler(help_handler)
-    dispatcher.add_handler(settings_handler)
-    dispatcher.add_handler(help_callback_handler)
-    dispatcher.add_handler(settings_callback_handler)
-    dispatcher.add_handler(migrate_handler)
-    dispatcher.add_handler(donate_handler)
+    application.add_handler(test_handler)
+    #dispatcher.add_handler(start_handler)
+    #dispatcher.add_handler(help_handler)
+    #dispatcher.add_handler(settings_handler)
+    #dispatcher.add_handler(help_callback_handler)
+    #dispatcher.add_handler(settings_callback_handler)
+    #dispatcher.add_handler(migrate_handler)
+    #dispatcher.add_handler(donate_handler)
 
-    # dispatcher.add_error_handler(error_callback)
+    application.add_error_handler(error_callback)
 
     # add antiflood processor
-    Dispatcher.process_update = process_update
+    dp = Dispatcher()
+    dp.update.middleware(RateLimitMiddleware())  # Добавляем middleware
 
-    if WEBHOOK:
+    if False and WEBHOOK:
         LOGGER.info("Using webhooks.")
         if CERT_PATH:
-            updater.start_webhook(listen="0.0.0.0",
-                                  port=PORT,
-                                  url_path=TOKEN,
-                                  webhook_url=URL + TOKEN,
-                                  cert=CERT_PATH)
+            await application.run_webhook(
+                listen="0.0.0.0",
+                port=PORT,
+                url_path=TOKEN,
+                webhook_url=URL + TOKEN,
+                cert=CERT_PATH)
         else:
-            updater.start_webhook(listen="0.0.0.0",
-                                  port=PORT,
-                                  url_path=TOKEN,
-                                  webhook_url=URL + TOKEN)
+            await application.run_webhook(
+                listen="0.0.0.0",
+                port=PORT,
+                url_path=TOKEN,
+                webhook_url=URL + TOKEN)
     else:
         LOGGER.info("Using long polling.")
-        updater.start_polling(timeout=15, read_latency=4)
+        application.run_polling()
 
-    updater.idle()
+class RateLimitMiddleware(BaseMiddleware):
+    def __init__(self):
+        self.user_limits = {}  # {user_id: (last_time, count)}
 
+    async def __call__(self, handler, event, data):
+        user_id = event.from_user.id
+        now = datetime.now()
 
-CHATS_CNT = {}
-CHATS_TIME = {}
+        last_time, cnt = self.user_limits.get(user_id, (now, 0))
 
-
-def process_update(self, update):
-    # An error happened while polling
-    if isinstance(update, TelegramError):
-        try:
-            self.dispatch_error(None, update)
-        except Exception:
-            self.logger.exception('An uncaught error was raised while handling the error')
-        return
-
-    if not update.effective_chat is None:
-        now = datetime.datetime.utcnow()
-        cnt = CHATS_CNT.get(update.effective_chat.id, 0)
-
-        t = CHATS_TIME.get(update.effective_chat.id, datetime.datetime(1970, 1, 1))
-        if t and now > t + datetime.timedelta(0, 1):
-            CHATS_TIME[update.effective_chat.id] = now
-            cnt = 0
-        else:
+        if now - last_time < timedelta(seconds=1):  # Проверяем, прошла ли 1 секунда
             cnt += 1
+            if cnt > 10:  # Лимит: 10 запросов в секунду
+                await event.answer("Слишком много запросов! Подождите секунду.")
+                return
+        else:
+            cnt = 1  # Сброс счётчика, если прошла 1 сек
 
-        if cnt > 10:
-            return
-
-        CHATS_CNT[update.effective_chat.id] = cnt
-    for group in self.groups:
-        try:
-            for handler in (x for x in self.handlers[group] if x.check_update(update)):
-                try:
-                    handler.handle_update(update=update, dispatcher=self, check_result=handler.check_update(update))
-                except Exception as e:
-                    self.logger.error("update raised error:" + str(update))
-                    raise e
-                break
-
-        # Stop processing with any other handler.
-        except DispatcherHandlerStop:
-            self.logger.debug('Stopping further handlers due to DispatcherHandlerStop')
-            break
-
-        # Dispatch any error.
-        except TelegramError as te:
-            self.logger.warning('A TelegramError was raised while processing the Update')
-
-            try:
-                self.dispatch_error(update, te)
-            except DispatcherHandlerStop:
-                self.logger.debug('Error handler stopped further handlers')
-                break
-            except Exception:
-                self.logger.exception('An uncaught error was raised while handling the error')
-
-        # Errors should not stop the thread.
-        except Exception:
-            self.logger.exception('An uncaught error was raised while processing the update')
-
+        self.user_limits[user_id] = (now, cnt)
+        return await handler(event, data)
 
 if __name__ == '__main__':
     LOGGER.info("Successfully loaded modules: " + str(ALL_MODULES))
-    main()
+    asyncio.run(main())
