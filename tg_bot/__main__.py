@@ -12,6 +12,7 @@ from telegram.error import BadRequest, TimedOut, NetworkError, ChatMigrated, Tel
 from telegram.ext import ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler
 from telegram.helpers import escape_markdown
 
+from tg_bot.modules.helper_funcs.handlers import create_handler
 from tg_bot import application, TOKEN, WEBHOOK, OWNER_ID, DONATION_LINK, CERT_PATH, PORT, URL, LOGGER, \
     ALLOW_EXCL
 # needed to dynamically load modules
@@ -417,7 +418,7 @@ def migrate_chats(bot: Bot, update: Update):
 
 
 async def main():
-    test_handler = CommandHandler("test", test)
+    test_handler = create_handler("test", test)
     #start_handler = CommandHandler("start", start, pass_args=True)
 
     #help_handler = CommandHandler("help", get_help)

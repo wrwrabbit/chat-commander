@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 
-import telegram.ext as tg
+from telegram.ext import Application, CommandHandler
 
 ENV = bool(os.environ.get('ENV', False))
 
@@ -64,22 +64,14 @@ if sys.version_info[0] < 3 or sys.version_info[1] < 6:
 
 SUDO_USERS.add(OWNER_ID)
 
-application = (tg.Application.builder().
+application = (Application.builder().
                token(TOKEN).
                concurrent_updates(True).
-               get_updates_timeout(15).
+               get_updates_pool_timeout(15).
                pool_timeout(4).
                build())
+
 
 SUDO_USERS = list(SUDO_USERS)
 WHITELIST_USERS = list(WHITELIST_USERS)
 SUPPORT_USERS = list(SUPPORT_USERS)
-
-# Load at end to ensure all prev variables have been set
-from tg_bot.modules.helper_funcs.handlers import CustomCommandHandler, CustomRegexHandler
-
-# make sure the regex handler can take extra kwargs
-tg.RegexHandler = CustomRegexHandler
-
-if ALLOW_EXCL:
-    tg.CommandHandler = CustomCommandHandler
