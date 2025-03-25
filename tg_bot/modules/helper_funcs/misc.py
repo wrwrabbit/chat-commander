@@ -1,7 +1,8 @@
 from math import ceil
 from typing import List, Dict
 
-from telegram import MAX_MESSAGE_LENGTH, InlineKeyboardButton, Bot, ParseMode
+from telegram import InlineKeyboardButton, Bot
+from telegram.constants import ParseMode, MessageLimit
 from telegram.error import TelegramError
 
 from tg_bot import LOAD, NO_LOAD
@@ -19,7 +20,7 @@ class EqInlineKeyboardButton(InlineKeyboardButton):
 
 
 def split_message(msg: str) -> List[str]:
-    if len(msg) < MAX_MESSAGE_LENGTH:
+    if len(msg) < MessageLimit.MAX_TEXT_LENGTH:
         return [msg]
 
     else:
@@ -27,7 +28,7 @@ def split_message(msg: str) -> List[str]:
         small_msg = ""
         result = []
         for line in lines:
-            if len(small_msg) + len(line) < MAX_MESSAGE_LENGTH:
+            if len(small_msg) + len(line) < MessageLimit.MAX_TEXT_LENGTH:
                 small_msg += line
             else:
                 result.append(small_msg)
@@ -74,7 +75,7 @@ def send_to_list(bot: Bot, send_to: list, message: str, markdown=False, html=Fal
     for user_id in set(send_to):
         try:
             if markdown:
-                bot.send_message(user_id, message, parse_mode=ParseMode.MARKDOWN)
+                bot.send_message(user_id, message, parse_mode=ParseMode.MARKDOWN_V2)
             elif html:
                 bot.send_message(user_id, message, parse_mode=ParseMode.HTML)
             else:
