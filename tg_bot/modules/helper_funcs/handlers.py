@@ -1,5 +1,5 @@
 from telegram.ext import CommandHandler, PrefixHandler, MessageHandler, filters
-from typing import Union, List, Callable, Optional
+from typing import Callable
 from tg_bot import ALLOW_EXCL
 
 
@@ -18,7 +18,7 @@ def create_handler(command: str, callback: Callable, **kwargs):
 
         return [
             main_handler,  # Обычные команды
-пше            MessageHandler(edited_filter, callback)  # Редактированные
+            MessageHandler(edited_filter, callback)  # Редактированные
         ]
     else:
         return CommandHandler(command, callback, **kwargs)
