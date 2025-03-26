@@ -1,5 +1,4 @@
 from multiprocessing.context import DefaultContext
-import asyncio
 from datetime import datetime, timedelta
 import importlib
 import re
@@ -13,8 +12,7 @@ from telegram.ext import ContextTypes, MessageHandler, CallbackQueryHandler, fil
 from telegram.helpers import escape_markdown
 
 from tg_bot.modules.helper_funcs.handlers import create_handler
-from tg_bot import application, TOKEN, WEBHOOK, OWNER_ID, DONATION_LINK, CERT_PATH, PORT, URL, LOGGER, \
-    ALLOW_EXCL
+from tg_bot import application, TOKEN, WEBHOOK, OWNER_ID, DONATION_LINK, CERT_PATH, PORT, URL, LOGGER, ALLOW_EXCL
 # needed to dynamically load modules
 # NOTE: Module order is not guaranteed, specify that in the config file!
 from tg_bot.modules import ALL_MODULES
@@ -103,7 +101,7 @@ async def send_help(chat_id, text, keyboard=None):
 
 async def test(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     print(update.to_dict())
-    await updatRe.effective_message.reply_text(r"Hola tester\! _I_ *have* `markdown`", parse_mode=ParseMode.MARKDOWN_V2)
+    await update.effective_message.reply_text(r"Hola tester\! _I_ *have* `markdown`", parse_mode=ParseMode.MARKDOWN_V2)
     # await update.effective_message.reply_text("This person edited a message")
     print(update.effective_message)
 
@@ -437,7 +435,7 @@ def main():
     #donate_handler = CommandHandler("donate", donate)
     #migrate_handler = MessageHandler(Filters.status_update.migrate, migrate_chats)
 
-    application.add_handler(test_handler)
+    application.add_handlers(test_handler)
     #dispatcher.add_handler(start_handler)
     #dispatcher.add_handler(help_handler)
     #dispatcher.add_handler(settings_handler)
