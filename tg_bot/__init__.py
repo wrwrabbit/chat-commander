@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 
-from telegram.ext import Application, CommandHandler
+from telegram.ext import Application
 
 ENV = bool(os.environ.get('ENV', False))
 

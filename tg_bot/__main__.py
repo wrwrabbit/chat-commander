@@ -1,4 +1,4 @@
-from aiogram import BaseMiddleware, Dispatcher
+from multiprocessing.context import DefaultContext
 import asyncio
 from datetime import datetime, timedelta
 import importlib
@@ -9,7 +9,7 @@ from telegram import Message, Chat, Update, Bot, User
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode, ChatType
 from telegram.error import BadRequest, TimedOut, NetworkError, ChatMigrated, TelegramError, Forbidden
-from telegram.ext import ContextTypes, CommandHandler, MessageHandler, CallbackQueryHandler
+from telegram.ext import ContextTypes, MessageHandler, CallbackQueryHandler, filters
 from telegram.helpers import escape_markdown
 
 from tg_bot.modules.helper_funcs.handlers import create_handler
@@ -35,24 +35,8 @@ You can find the list of available commands with /help.
 
 If you're enjoying using me, and/or would like to help me survive in the wild, hit /donate to help fund/upgrade my VPS!
 """
-
-HELP_STRINGS = """
-Hey there! My name is *{}*.
-I'm a modular group management bot with a few fun extras! Have a look at the following for an idea of some of \
-the things I can help you with.
-
-*Main* commands available:
- - /start: start the bot
- - /help: PM's you this message.
- - /help <module name>: PM's you info about that module.
- - /donate: information about how to donate!
- - /settings:
-   - in PM: will send you your settings for all supported modules.
-   - in a group: will redirect you to pm, with all that chat's settings.
-
-{}
-And the following:
-""".format(application.bot.first_name, "" if not ALLOW_EXCL else "\nAll commands can either be used with / or !.\n")
+# Определяем HELP_STRINGS на уровне модуля с заглушкой
+HELP_STRINGS = "Bot is starting... Please wait"
 
 DONATE_STRING = DONATION_LINK
 
@@ -118,8 +102,8 @@ async def send_help(chat_id, text, keyboard=None):
 
 
 async def test(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
-    # pprint(eval(str(update)))
-    await update.effective_message.reply_text(r"Hola tester\! \_I\_ \*have\* \`markdown\`", parse_mode=ParseMode.MARKDOWN_V2)
+    print(update.to_dict())
+    await updatRe.effective_message.reply_text(r"Hola tester\! _I_ *have* `markdown`", parse_mode=ParseMode.MARKDOWN_V2)
     # await update.effective_message.reply_text("This person edited a message")
     print(update.effective_message)
 
@@ -417,7 +401,30 @@ def migrate_chats(bot: Bot, update: Update):
     return
 
 
-async def main():
+def main():
+    #application.initialize()
+    #print(f"Бот @{application.bot.username} успешно инициализирован")
+
+    global HELP_STRINGS
+    HELP_STRINGS =  """
+    Hey there! My name is *{}*.
+    I'm a modular group management bot with a few fun extras! Have a look at the following for an idea of some of \
+    the things I can help you with.
+    
+    *Main* commands available:
+     - /start: start the bot
+     - /help: PM's you this message.
+     - /help <module name>: PM's you info about that module.
+     - /donate: information about how to donate!
+     - /settings:
+       - in PM: will send you your settings for all supported modules.
+       - in a group: will redirect you to pm, with all that chat's settings.
+    
+    {}
+    And the following:
+    """.format(OWNER_ID, "" if not ALLOW_EXCL else "\nAll commands can either be used with / or !.\n")
+
+
     test_handler = create_handler("test", test)
     #start_handler = CommandHandler("start", start, pass_args=True)
 
@@ -442,20 +449,22 @@ async def main():
     application.add_error_handler(error_callback)
 
     # add antiflood processor
-    dp = Dispatcher()
-    dp.update.middleware(RateLimitMiddleware())  # Добавляем middleware
+    rate_limiter = RateLimitMiddleware()
+    application.add_handler(MessageHandler(
+        filters.ALL & ~filters.COMMAND,
+        lambda update, context: rate_limiter.check(update, context)))
 
     if False and WEBHOOK:
         LOGGER.info("Using webhooks.")
         if CERT_PATH:
-            await application.run_webhook(
+            application.run_webhook(
                 listen="0.0.0.0",
                 port=PORT,
                 url_path=TOKEN,
                 webhook_url=URL + TOKEN,
                 cert=CERT_PATH)
         else:
-            await application.run_webhook(
+            application.run_webhook(
                 listen="0.0.0.0",
                 port=PORT,
                 url_path=TOKEN,
@@ -464,12 +473,12 @@ async def main():
         LOGGER.info("Using long polling.")
         application.run_polling()
 
-class RateLimitMiddleware(BaseMiddleware):
+class RateLimitMiddleware:
     def __init__(self):
         self.user_limits = {}  # {user_id: (last_time, count)}
 
-    async def __call__(self, handler, event, data):
-        user_id = event.from_user.id
+    async def check(self, update: Update, _:ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
         now = datetime.now()
 
         last_time, cnt = self.user_limits.get(user_id, (now, 0))
@@ -477,14 +486,14 @@ class RateLimitMiddleware(BaseMiddleware):
         if now - last_time < timedelta(seconds=1):  # Проверяем, прошла ли 1 секунда
             cnt += 1
             if cnt > 10:  # Лимит: 10 запросов в секунду
-                await event.answer("Слишком много запросов! Подождите секунду.")
-                return
+                await update.message.reply_text("Слишком много запросов! Подождите секунду.")
+                return False
         else:
             cnt = 1  # Сброс счётчика, если прошла 1 сек
 
         self.user_limits[user_id] = (now, cnt)
-        return await handler(event, data)
+        return True
 
 if __name__ == '__main__':
     LOGGER.info("Successfully loaded modules: " + str(ALL_MODULES))
-    asyncio.run(main())
+    main()
