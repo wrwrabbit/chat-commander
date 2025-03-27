@@ -1,4 +1,5 @@
 from multiprocessing.context import DefaultContext
+from asyncio import Lock
 from datetime import datetime, timedelta
 import importlib
 import re
@@ -8,7 +9,7 @@ from telegram import Message, Chat, Update, Bot, User
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode, ChatType
 from telegram.error import BadRequest, TimedOut, NetworkError, ChatMigrated, TelegramError, Forbidden
-from telegram.ext import ContextTypes, MessageHandler, CallbackQueryHandler, filters
+from telegram.ext import ContextTypes, MessageHandler, CallbackQueryHandler, filters, ApplicationHandlerStop
 from telegram.helpers import escape_markdown
 
 from tg_bot.modules.helper_funcs.handlers import create_handler
@@ -403,6 +404,10 @@ def main():
     #application.initialize()
     #print(f"Бот @{application.bot.username} успешно инициализирован")
 
+    # add antiflood processor. Must be before any application.add_handler
+    rate_limiter = RateLimitMiddleware()
+    application.add_handler(MessageHandler(filters.ALL, rate_limiter.check), group=-1)
+
     global HELP_STRINGS
     HELP_STRINGS =  """
     Hey there! My name is *{}*.
@@ -435,7 +440,7 @@ def main():
     #donate_handler = CommandHandler("donate", donate)
     #migrate_handler = MessageHandler(Filters.status_update.migrate, migrate_chats)
 
-    application.add_handlers(test_handler)
+    application.add_handler(test_handler)
     #dispatcher.add_handler(start_handler)
     #dispatcher.add_handler(help_handler)
     #dispatcher.add_handler(settings_handler)
@@ -446,11 +451,6 @@ def main():
 
     application.add_error_handler(error_callback)
 
-    # add antiflood processor
-    rate_limiter = RateLimitMiddleware()
-    application.add_handler(MessageHandler(
-        filters.ALL & ~filters.COMMAND,
-        lambda update, context: rate_limiter.check(update, context)))
 
     if False and WEBHOOK:
         LOGGER.info("Using webhooks.")
@@ -473,24 +473,39 @@ def main():
 
 class RateLimitMiddleware:
     def __init__(self):
+        self._global_lock = Lock()
+        self.locks = {}  # Regular dict
         self.user_limits = {}  # {user_id: (last_time, count)}
 
-    async def check(self, update: Update, _:ContextTypes.DEFAULT_TYPE):
+    async def check(self, update: Update, context:ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
-        now = datetime.now()
+        chat_id = update.effective_chat.id
 
-        last_time, cnt = self.user_limits.get(user_id, (now, 0))
+        async with self._global_lock:
+            if user_id not in self.locks:
+                self.locks[user_id] = Lock()
 
-        if now - last_time < timedelta(seconds=1):  # Проверяем, прошла ли 1 секунда
-            cnt += 1
-            if cnt > 10:  # Лимит: 10 запросов в секунду
-                await update.message.reply_text("Слишком много запросов! Подождите секунду.")
-                return False
-        else:
-            cnt = 1  # Сброс счётчика, если прошла 1 сек
+        async with self.locks[user_id]:
+            now = datetime.now()
+            last_time, cnt = self.user_limits.get(user_id, (now, 0))
 
-        self.user_limits[user_id] = (now, cnt)
-        return True
+            if now - last_time < timedelta(seconds=1):  # Проверяем, прошла ли 1 секунда
+                cnt += 1
+                if cnt > 10:  # Лимит: 10 запросов в секунду
+                    try:
+                        LOGGER.info(f"Слишком много запросов! Подождите секунду. user_id={user_id}")
+
+                        await context.bot.delete_message(
+                            chat_id=chat_id,
+                            message_id=update.effective_message.message_id,
+                        )
+                    finally:
+                        raise ApplicationHandlerStop
+            else:
+                cnt = 1  # Сброс счётчика, если прошла 1 сек
+
+            self.user_limits[user_id] = (now, cnt)
+
 
 if __name__ == '__main__':
     LOGGER.info("Successfully loaded modules: " + str(ALL_MODULES))

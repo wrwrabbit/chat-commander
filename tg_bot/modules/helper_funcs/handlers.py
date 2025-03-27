@@ -12,6 +12,6 @@ def create_handler(command: str, callback: Callable, **kwargs):
 
         main_handler = PrefixHandler(CMD_STARTERS, command, callback, **kwargs)
 
-        return main_handler,  # Обычные команды
+        return main_handler  # Обычные команды
     else:
         return CommandHandler(command, callback, **kwargs)
