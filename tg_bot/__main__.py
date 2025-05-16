@@ -91,12 +91,60 @@ for module_name in ALL_MODULES:
         USER_SETTINGS[imported_module.__mod_name__.lower()] = imported_module
 
 
+_HELP_STRINGS_CACHE: Optional[str] = None
+_HELP_STRING_TEMPLATE: str = """
+Hey there\! My name is *{bot_name}*\.
+I'm a modular group management bot with a few fun extras\! Have a look at the following for an idea of some of \\
+the things I can help you with\.
+
+*Main* commands available:
+ \- /start: start the bot\.
+ \- /help: PM's you this message\.
+ \- /help \<module name\>: PM's you info about that module\.
+ \- /donate: information about how to donate\!
+ \- /settings:
+   \- in PM: will send you your settings for all supported modules\.
+   \- in a group: will redirect you to pm, with all that chat's settings\.
+
+{allow_excl_info}
+And the following:
+"""
+
+async def get_formatted_help_string() -> str:
+    """
+    Асинхронно получает имя бота (если еще не получено)
+    и форматирует HELP_STRINGS. Кэширует результат.
+    """
+    global _HELP_STRINGS_CACHE
+    if _HELP_STRINGS_CACHE is None:
+        try:
+            # Предполагаем, что application.initialize() был вызван при старте,
+            # так как bot.get_me() этого требует.
+            bot_info = await application.bot.get_me()
+            actual_bot_name = escape_markdown(bot_info.first_name, version=2)
+        except Exception as e:
+            LOGGER.error(f"Could not get bot name for HELP_STRINGS: {e}", exc_info=True)
+            actual_bot_name = "[Unknown Bot Name]" # Заглушка в случае ошибки
+
+        allow_excl_text = "" if not ALLOW_EXCL else "\\nAll commands can either be used with / or \!\.\\n"
+        
+        # Формируем основную часть строки помощи, которая может включать ALLOW_EXCL
+        _HELP_STRINGS_CACHE = _HELP_STRING_TEMPLATE.format(
+            bot_name=actual_bot_name,
+            allow_excl_info=allow_excl_text # Это должно быть частью шаблона _HELP_STRING_TEMPLATE
+        )
+
+    print (_HELP_STRINGS_CACHE)
+    return _HELP_STRINGS_CACHE
+
+
 async def send_help(chat_id, text, keyboard=None):
     if not keyboard:
+        # Здесь paginate_modules должен вызываться с актуальным HELPABLE
         keyboard = InlineKeyboardMarkup(paginate_modules(0, HELPABLE, "help"))
     await application.bot.send_message(chat_id=chat_id,
-                                text=text,
-                                parse_mode=ParseMode.MARKDOWN,
+                                text=text, # Этот текст теперь будет от get_formatted_help_string
+                                parse_mode=ParseMode.MARKDOWN_V2,
                                 reply_markup=keyboard)
 
 
@@ -167,44 +215,62 @@ async def error_callback(_: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 
-def help_button(bot: Bot, update: Update):
+async def help_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    mod_match = re.match(r"help_module\((.+?)\)", query.data)
-    prev_match = re.match(r"help_prev\((.+?)\)", query.data)
-    next_match = re.match(r"help_next\((.+?)\)", query.data)
+    mod_match = re.match(r"help_module\\((.+?)\\)", query.data)
+    prev_match = re.match(r"help_prev\\((.+?)\\)", query.data)
+    next_match = re.match(r"help_next\\((.+?)\\)", query.data)
     back_match = re.match(r"help_back", query.data)
+    
+    current_help_text = await get_formatted_help_string()
+
     try:
         if mod_match:
-            module = mod_match.group(1)
-            text = "Вот справка для модуля *{}*:\n".format(HELPABLE[module].__mod_name__) \
-                   + HELPABLE[module].__help__
-            query.message.reply_text(text=text,
-                                     parse_mode=ParseMode.MARKDOWN,
-                                     reply_markup=InlineKeyboardMarkup(
-                                         [[InlineKeyboardButton(text="Назад", callback_data="help_back")]]))
+            module_name_from_callback = mod_match.group(1)
+            if module_name_from_callback in HELPABLE:
+                module_data = HELPABLE[module_name_from_callback]
+                text = f"Вот справка для модуля *{module_data.__mod_name__}*:\n{module_data.__help__}"
+                await query.message.reply_text(
+                    text=text,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton(text="Назад", callback_data="help_back")]
+                    ])
+                )
+            else:
+                LOGGER.warning(f"Module '{module_name_from_callback}' not found in HELPABLE. Callback data: {query.data}")
+                await context.bot.answer_callback_query(query.id, text="Информация для этого модуля не найдена.", show_alert=True)
+                # Возможно, не нужно удалять сообщение, если модуль не найден, 
+                # чтобы пользователь видел, на что нажал.
+                return # Предотвращаем удаление сообщения ниже
 
         elif prev_match:
             curr_page = int(prev_match.group(1))
-            query.message.reply_text(HELP_STRINGS,
-                                     parse_mode=ParseMode.MARKDOWN,
-                                     reply_markup=InlineKeyboardMarkup(
-                                         paginate_modules(curr_page - 1, HELPABLE, "help")))
+            await query.message.reply_text(
+                current_help_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=InlineKeyboardMarkup(paginate_modules(curr_page - 1, HELPABLE, "help"))
+            )
 
         elif next_match:
             next_page = int(next_match.group(1))
-            query.message.reply_text(HELP_STRINGS,
-                                     parse_mode=ParseMode.MARKDOWN,
-                                     reply_markup=InlineKeyboardMarkup(
-                                         paginate_modules(next_page + 1, HELPABLE, "help")))
+            await query.message.reply_text(
+                current_help_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=InlineKeyboardMarkup(paginate_modules(next_page + 1, HELPABLE, "help"))
+            )
 
         elif back_match:
-            query.message.reply_text(text=HELP_STRINGS,
-                                     parse_mode=ParseMode.MARKDOWN,
-                                     reply_markup=InlineKeyboardMarkup(paginate_modules(0, HELPABLE, "help")))
+            await query.message.reply_text(
+                text=current_help_text,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=InlineKeyboardMarkup(paginate_modules(0, HELPABLE, "help"))
+            )
 
-        # ensure no spinny white circle
-        bot.answer_callback_query(query.id)
-        query.message.delete()
+        await context.bot.answer_callback_query(query.id)
+        if mod_match or prev_match or next_match or back_match: # Удаляем сообщение только если была реакция на кнопку
+            await query.message.delete()
+            
     except BadRequest as excp:
         if excp.message == "Message is not modified":
             pass
@@ -213,35 +279,49 @@ def help_button(bot: Bot, update: Update):
         elif excp.message == "Message can't be deleted":
             pass
         elif "Query is too old" in excp.message:
-            bot.send_message(query.chat_instance, "Menu is expired. Please type '/help' to open new menu")
+            try:
+                await context.bot.send_message(query.message.chat_id, "Menu is expired. Please type '/help' to open new menu")
+            except Exception as e:
+                LOGGER.warning(f"Could not send expired menu message: {e}")
             pass
         else:
             LOGGER.exception("Exception in help buttons. %s", str(query.data))
+    except Exception as e:
+        LOGGER.exception(f"Unexpected error in help_button: {e}")
+        try:
+            await context.bot.answer_callback_query(query.id, text="Произошла ошибка при обработке вашего запроса.", show_alert=True)
+        except Exception:
+            pass # Если даже ответ на колбэк не удался, просто логируем
 
 
 
-def get_help(bot: Bot, update: Update):
+async def get_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat  # type: Optional[Chat]
     args = update.effective_message.text.split(None, 1)
 
-    # ONLY send help in PM
-    if chat.type != chat.PRIVATE:
+    current_help_text = await get_formatted_help_string()
 
-        update.effective_message.reply_text("Contact me in PM to get the list of possible commands.",
-                                            reply_markup=InlineKeyboardMarkup(
-                                                [[InlineKeyboardButton(text="Help",
-                                                                       url="t.me/{}?start=help".format(
-                                                                           bot.username))]]))
+    if chat.type != ChatType.PRIVATE:
+        await update.effective_message.reply_text(
+            "Contact me in PM to get the list of possible commands.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(text="Help", url=f"t.me/{context.bot.username}?start=help")]
+            ])
+        )
         return
 
-    elif len(args) >= 2 and any(args[1].lower() == x for x in HELPABLE):
-        module = args[1].lower()
-        text = "Here is the available help for the *{}* module:\n".format(HELPABLE[module].__mod_name__) \
-               + HELPABLE[module].__help__
-        send_help(chat.id, text, InlineKeyboardMarkup([[InlineKeyboardButton(text="Назад", callback_data="help_back")]]))
-
+    elif len(args) >= 2:
+        requested_module_name = args[1].lower()
+        if requested_module_name in HELPABLE:
+            module_data = HELPABLE[requested_module_name]
+            text = f"Here is the available help for the *{module_data.__mod_name__}* module:\n{module_data.__help__}"
+            await send_help(chat.id, text, InlineKeyboardMarkup([
+                [InlineKeyboardButton(text="Назад", callback_data="help_back")]
+            ]))
+        else:
+            await update.effective_message.reply_text(f"Модуль '{args[1]}' не найден. Попробуйте /help.")
     else:
-        send_help(chat.id, HELP_STRINGS)
+        await send_help(chat.id, current_help_text)
 
 
 async def send_settings(context: ContextTypes.DEFAULT_TYPE, chat_id, user_id, user=False):
@@ -408,31 +488,11 @@ def main():
     rate_limiter = RateLimitMiddleware()
     application.add_handler(MessageHandler(filters.ALL, rate_limiter.check), group=-1)
 
-    global HELP_STRINGS
-    HELP_STRINGS =  """
-    Hey there! My name is *{}*.
-    I'm a modular group management bot with a few fun extras! Have a look at the following for an idea of some of \
-    the things I can help you with.
+    # Раскомментируем и используем обновленные (async) get_help и help_button
+    help_handler = create_handler("help", get_help)
+    # help_callback_handler = CallbackQueryHandler(help_button, pattern=r"help_") # ЗАКОММЕНТИРОВАЛИ
     
-    *Main* commands available:
-     - /start: start the bot
-     - /help: PM's you this message.
-     - /help <module name>: PM's you info about that module.
-     - /donate: information about how to donate!
-     - /settings:
-       - in PM: will send you your settings for all supported modules.
-       - in a group: will redirect you to pm, with all that chat's settings.
-    
-    {}
-    And the following:
-    """.format(OWNER_ID, "" if not ALLOW_EXCL else "\nAll commands can either be used with / or !.\n")
-
-
     test_handler = create_handler("test", test)
-    #start_handler = CommandHandler("start", start, pass_args=True)
-
-    #help_handler = CommandHandler("help", get_help)
-    #help_callback_handler = CallbackQueryHandler(help_button, pattern=r"help_")
 
     #settings_handler = CommandHandler("settings", get_settings)
     #settings_callback_handler = CallbackQueryHandler(settings_button, pattern=r"stngs_")
@@ -441,10 +501,9 @@ def main():
     #migrate_handler = MessageHandler(Filters.status_update.migrate, migrate_chats)
 
     application.add_handler(test_handler)
-    #dispatcher.add_handler(start_handler)
-    #dispatcher.add_handler(help_handler)
+    application.add_handler(help_handler)
+    # application.add_handler(help_callback_handler) # ЗАКОММЕНТИРОВАЛИ
     #dispatcher.add_handler(settings_handler)
-    #dispatcher.add_handler(help_callback_handler)
     #dispatcher.add_handler(settings_callback_handler)
     #dispatcher.add_handler(migrate_handler)
     #dispatcher.add_handler(donate_handler)
