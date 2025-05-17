@@ -1,4 +1,3 @@
-from multiprocessing.context import DefaultContext
 from asyncio import Lock
 from datetime import datetime, timedelta
 import importlib
@@ -35,7 +34,7 @@ You can find the list of available commands with /help.
 If you're enjoying using me, and/or would like to help me survive in the wild, hit /donate to help fund/upgrade my VPS!
 """
 # Определяем HELP_STRINGS на уровне модуля с заглушкой
-HELP_STRINGS = "Bot is starting... Please wait"
+HELP_STRINGS = "Bot is starting. Please wait"
 
 DONATE_STRING = DONATION_LINK
 
@@ -134,16 +133,14 @@ async def get_formatted_help_string() -> str:
             allow_excl_info=allow_excl_text # Это должно быть частью шаблона _HELP_STRING_TEMPLATE
         )
 
-    print (_HELP_STRINGS_CACHE)
     return _HELP_STRINGS_CACHE
 
 
 async def send_help(chat_id, text, keyboard=None):
     if not keyboard:
-        # Здесь paginate_modules должен вызываться с актуальным HELPABLE
         keyboard = InlineKeyboardMarkup(paginate_modules(0, HELPABLE, "help"))
     await application.bot.send_message(chat_id=chat_id,
-                                text=text, # Этот текст теперь будет от get_formatted_help_string
+                                text=text,
                                 parse_mode=ParseMode.MARKDOWN_V2,
                                 reply_markup=keyboard)
 
@@ -217,9 +214,9 @@ async def error_callback(_: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def help_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    mod_match = re.match(r"help_module\\((.+?)\\)", query.data)
-    prev_match = re.match(r"help_prev\\((.+?)\\)", query.data)
-    next_match = re.match(r"help_next\\((.+?)\\)", query.data)
+    mod_match = re.match(r"help_module\((.+?)\)", query.data)
+    prev_match = re.match(r"help_prev\((.+?)\)", query.data)
+    next_match = re.match(r"help_next\((.+?)\)", query.data)
     back_match = re.match(r"help_back", query.data)
     
     current_help_text = await get_formatted_help_string()
@@ -230,9 +227,9 @@ async def help_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if module_name_from_callback in HELPABLE:
                 module_data = HELPABLE[module_name_from_callback]
                 text = f"Вот справка для модуля *{module_data.__mod_name__}*:\n{module_data.__help__}"
-                await query.message.reply_text(
+                await query.edit_message_text(
                     text=text,
-                    parse_mode=ParseMode.MARKDOWN,
+                    parse_mode=ParseMode.MARKDOWN_V2,
                     reply_markup=InlineKeyboardMarkup([
                         [InlineKeyboardButton(text="Назад", callback_data="help_back")]
                     ])
@@ -240,38 +237,32 @@ async def help_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 LOGGER.warning(f"Module '{module_name_from_callback}' not found in HELPABLE. Callback data: {query.data}")
                 await context.bot.answer_callback_query(query.id, text="Информация для этого модуля не найдена.", show_alert=True)
-                # Возможно, не нужно удалять сообщение, если модуль не найден, 
-                # чтобы пользователь видел, на что нажал.
-                return # Предотвращаем удаление сообщения ниже
-
+                return
         elif prev_match:
             curr_page = int(prev_match.group(1))
-            await query.message.reply_text(
+            await query.edit_message_text(
                 current_help_text,
-                parse_mode=ParseMode.MARKDOWN,
+                parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=InlineKeyboardMarkup(paginate_modules(curr_page - 1, HELPABLE, "help"))
             )
-
         elif next_match:
             next_page = int(next_match.group(1))
-            await query.message.reply_text(
+            await query.edit_message_text(
                 current_help_text,
-                parse_mode=ParseMode.MARKDOWN,
+                parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=InlineKeyboardMarkup(paginate_modules(next_page + 1, HELPABLE, "help"))
             )
 
         elif back_match:
-            await query.message.reply_text(
+            await query.edit_message_text(
                 text=current_help_text,
-                parse_mode=ParseMode.MARKDOWN,
+                parse_mode=ParseMode.MARKDOWN_V2,
                 reply_markup=InlineKeyboardMarkup(paginate_modules(0, HELPABLE, "help"))
             )
 
         await context.bot.answer_callback_query(query.id)
-        if mod_match or prev_match or next_match or back_match: # Удаляем сообщение только если была реакция на кнопку
-            await query.message.delete()
-            
     except BadRequest as excp:
+        LOGGER.exception("Exception %s in help buttons. %s", excp.message, str(query.data))
         if excp.message == "Message is not modified":
             pass
         elif excp.message == "Query_id_invalid":
@@ -280,10 +271,9 @@ async def help_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         elif "Query is too old" in excp.message:
             try:
-                await context.bot.send_message(query.message.chat_id, "Menu is expired. Please type '/help' to open new menu")
+                await context.bot.send_message(query.message.chat.id, "Menu is expired. Please type '/help' to open new menu")
             except Exception as e:
                 LOGGER.warning(f"Could not send expired menu message: {e}")
-            pass
         else:
             LOGGER.exception("Exception in help buttons. %s", str(query.data))
     except Exception as e:
@@ -291,7 +281,7 @@ async def help_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.answer_callback_query(query.id, text="Произошла ошибка при обработке вашего запроса.", show_alert=True)
         except Exception:
-            pass # Если даже ответ на колбэк не удался, просто логируем
+            pass
 
 
 
@@ -488,9 +478,8 @@ def main():
     rate_limiter = RateLimitMiddleware()
     application.add_handler(MessageHandler(filters.ALL, rate_limiter.check), group=-1)
 
-    # Раскомментируем и используем обновленные (async) get_help и help_button
     help_handler = create_handler("help", get_help)
-    # help_callback_handler = CallbackQueryHandler(help_button, pattern=r"help_") # ЗАКОММЕНТИРОВАЛИ
+    help_callback_handler = CallbackQueryHandler(help_button, pattern=r"help_")
     
     test_handler = create_handler("test", test)
 
@@ -502,13 +491,13 @@ def main():
 
     application.add_handler(test_handler)
     application.add_handler(help_handler)
-    # application.add_handler(help_callback_handler) # ЗАКОММЕНТИРОВАЛИ
+    application.add_handler(help_callback_handler)
+    #application.add_handler(settings_callback_handler)
     #dispatcher.add_handler(settings_handler)
-    #dispatcher.add_handler(settings_callback_handler)
     #dispatcher.add_handler(migrate_handler)
     #dispatcher.add_handler(donate_handler)
 
-    application.add_error_handler(error_callback)
+    #application.add_error_handler(error_callback)
 
 
     if False and WEBHOOK:
