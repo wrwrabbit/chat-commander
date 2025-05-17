@@ -8,4 +8,4 @@ tg_bot/config.py
 .env
 cert.pem
 private.key
-foo1env/
+foo1env/.DS_Store
