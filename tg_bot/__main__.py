@@ -33,8 +33,53 @@ You can find the list of available commands with /help.
 
 If you're enjoying using me, and/or would like to help me survive in the wild, hit /donate to help fund/upgrade my VPS!
 """
-# Определяем HELP_STRINGS на уровне модуля с заглушкой
-HELP_STRINGS = "Bot is starting. Please wait"
+
+HELP_STRINGS = "Depricated"
+_HELP_STRINGS_CACHE: Optional[str] = None
+_HELP_STRING_TEMPLATE: str = """
+Hey there\! My name is *{bot_name}*\.
+I'm a modular group management bot with a few fun extras\! Have a look at the following for an idea of some of \\
+the things I can help you with\.
+
+*Main* commands available:
+ \- /start: start the bot\.
+ \- /help: PM's you this message\.
+ \- /help \<module name\>: PM's you info about that module\.
+ \- /donate: information about how to donate\!
+ \- /settings:
+   \- in PM: will send you your settings for all supported modules\.
+   \- in a group: will redirect you to pm, with all that chat's settings\.
+
+{allow_excl_info}
+And the following:
+"""
+
+
+async def get_formatted_help_string() -> str:
+    """
+    Асинхронно получает имя бота (если еще не получено)
+    и форматирует HELP_STRINGS. Кэширует результат.
+    """
+    global _HELP_STRINGS_CACHE
+    if _HELP_STRINGS_CACHE is None:
+        try:
+            # Предполагаем, что application.initialize() был вызван при старте,
+            # так как bot.get_me() этого требует.
+            bot_info = await application.bot.get_me()
+            actual_bot_name = escape_markdown(bot_info.first_name, version=2)
+        except Exception as e:
+            LOGGER.error(f"Could not get bot name for HELP_STRINGS: {e}", exc_info=True)
+            actual_bot_name = "[Unknown Bot Name]"  # Заглушка в случае ошибки
+
+        allow_excl_text = "" if not ALLOW_EXCL else "\\nAll commands can either be used with / or \!\.\\n"
+
+        # Формируем основную часть строки помощи, которая может включать ALLOW_EXCL
+        _HELP_STRINGS_CACHE = _HELP_STRING_TEMPLATE.format(
+            bot_name=actual_bot_name,
+            allow_excl_info=allow_excl_text  # Это должно быть частью шаблона _HELP_STRING_TEMPLATE
+        )
+
+    return _HELP_STRINGS_CACHE
 
 DONATE_STRING = DONATION_LINK
 
@@ -90,50 +135,6 @@ for module_name in ALL_MODULES:
         USER_SETTINGS[imported_module.__mod_name__.lower()] = imported_module
 
 
-_HELP_STRINGS_CACHE: Optional[str] = None
-_HELP_STRING_TEMPLATE: str = """
-Hey there\! My name is *{bot_name}*\.
-I'm a modular group management bot with a few fun extras\! Have a look at the following for an idea of some of \\
-the things I can help you with\.
-
-*Main* commands available:
- \- /start: start the bot\.
- \- /help: PM's you this message\.
- \- /help \<module name\>: PM's you info about that module\.
- \- /donate: information about how to donate\!
- \- /settings:
-   \- in PM: will send you your settings for all supported modules\.
-   \- in a group: will redirect you to pm, with all that chat's settings\.
-
-{allow_excl_info}
-And the following:
-"""
-
-async def get_formatted_help_string() -> str:
-    """
-    Асинхронно получает имя бота (если еще не получено)
-    и форматирует HELP_STRINGS. Кэширует результат.
-    """
-    global _HELP_STRINGS_CACHE
-    if _HELP_STRINGS_CACHE is None:
-        try:
-            # Предполагаем, что application.initialize() был вызван при старте,
-            # так как bot.get_me() этого требует.
-            bot_info = await application.bot.get_me()
-            actual_bot_name = escape_markdown(bot_info.first_name, version=2)
-        except Exception as e:
-            LOGGER.error(f"Could not get bot name for HELP_STRINGS: {e}", exc_info=True)
-            actual_bot_name = "[Unknown Bot Name]" # Заглушка в случае ошибки
-
-        allow_excl_text = "" if not ALLOW_EXCL else "\\nAll commands can either be used with / or \!\.\\n"
-        
-        # Формируем основную часть строки помощи, которая может включать ALLOW_EXCL
-        _HELP_STRINGS_CACHE = _HELP_STRING_TEMPLATE.format(
-            bot_name=actual_bot_name,
-            allow_excl_info=allow_excl_text # Это должно быть частью шаблона _HELP_STRING_TEMPLATE
-        )
-
-    return _HELP_STRINGS_CACHE
 
 
 async def send_help(chat_id, text, keyboard=None):
@@ -260,6 +261,7 @@ async def help_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(paginate_modules(0, HELPABLE, "help"))
             )
 
+        # ТОЛЬКО подтверждаем callback-запрос (удаление сообщения убрано)
         await context.bot.answer_callback_query(query.id)
     except BadRequest as excp:
         LOGGER.exception("Exception %s in help buttons. %s", excp.message, str(query.data))
@@ -270,17 +272,7 @@ async def help_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif excp.message == "Message can't be deleted":
             pass
         elif "Query is too old" in excp.message:
-            try:
-                await context.bot.send_message(query.message.chat.id, "Menu is expired. Please type '/help' to open new menu")
-            except Exception as e:
-                LOGGER.warning(f"Could not send expired menu message: {e}")
-        else:
-            LOGGER.exception("Exception in help buttons. %s", str(query.data))
-    except Exception as e:
-        LOGGER.exception(f"Unexpected error in help_button: {e}")
-        try:
-            await context.bot.answer_callback_query(query.id, text="Произошла ошибка при обработке вашего запроса.", show_alert=True)
-        except Exception:
+            await context.bot.send_message(query.message.chat.id, "Menu is expired. Please type '/help' to open new menu")
             pass
 
 
@@ -471,17 +463,15 @@ def migrate_chats(bot: Bot, update: Update):
 
 
 def main():
-    #application.initialize()
-    #print(f"Бот @{application.bot.username} успешно инициализирован")
-
     # add antiflood processor. Must be before any application.add_handler
     rate_limiter = RateLimitMiddleware()
     application.add_handler(MessageHandler(filters.ALL, rate_limiter.check), group=-1)
 
+    test_handler = create_handler("test", test)
+    # start_handler = CommandHandler("start", start, pass_args=True)
+
     help_handler = create_handler("help", get_help)
     help_callback_handler = CallbackQueryHandler(help_button, pattern=r"help_")
-    
-    test_handler = create_handler("test", test)
 
     #settings_handler = CommandHandler("settings", get_settings)
     #settings_callback_handler = CallbackQueryHandler(settings_button, pattern=r"stngs_")
@@ -490,17 +480,18 @@ def main():
     #migrate_handler = MessageHandler(Filters.status_update.migrate, migrate_chats)
 
     application.add_handler(test_handler)
+    # dispatcher.add_handler(start_handler)
     application.add_handler(help_handler)
+    #dispatcher.add_handler(settings_handler)
     application.add_handler(help_callback_handler)
     #application.add_handler(settings_callback_handler)
-    #dispatcher.add_handler(settings_handler)
     #dispatcher.add_handler(migrate_handler)
     #dispatcher.add_handler(donate_handler)
 
     #application.add_error_handler(error_callback)
 
 
-    if False and WEBHOOK:
+    if WEBHOOK:
         LOGGER.info("Using webhooks.")
         if CERT_PATH:
             application.run_webhook(
