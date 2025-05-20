@@ -27,7 +27,7 @@ async def check_flood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
         return ""
 
     # ignore admins
-    if await is_user_admin(chat, user.id):
+    if await is_user_admin(chat, user.id, context):
         sql.update_flood(str(chat.id), None, is_channel)
         return ""
 
@@ -45,7 +45,7 @@ async def check_flood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
                    "\n#BANNED" \
                    "\n<b>User:</b> {}" \
                    "\nFlooded the group.".format(html.escape(chat.title),
-                                                 mention_html(user.id, user.first_name))
+                                                 mention_html(str(user.id), user.first_name))
         else:
             sender_chat = update.effective_message.sender_chat
             await chat.ban_sender_chat(sender_chat.id)
@@ -56,7 +56,7 @@ async def check_flood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
                    "\n#BANNED" \
                    "\n<b>User:</b> {}" \
                    "\nFlooded the group.".format(html.escape(chat.title),
-                                                 mention_html(sender_chat.id, sender_chat.username))
+                                                 mention_html(str(sender_chat.id), sender_chat.username))
 
     except BadRequest:
         await msg.reply_text("I can't kick people here, give me permissions first! Until then, I'll disable antiflood.")
@@ -70,7 +70,7 @@ async def check_flood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str
 @can_restrict
 @loggable
 async def set_flood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
-    args = update.effective_message.text.split(" ")[1:]
+    args = context.args  # Автоматически разбивает строку по пробелам
     chat = update.effective_chat  # type: Optional[Chat]
     user = update.effective_user  # type: Optional[User]
     message = update.effective_message  # type: Optional[Message]
@@ -89,7 +89,7 @@ async def set_flood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
                 return "<b>{}:</b>" \
                        "\n#SETFLOOD" \
                        "\n<b>Admin:</b> {}" \
-                       "\nDisabled antiflood.".format(html.escape(chat.title), mention_html(user.id, user.first_name))
+                       "\nDisabled antiflood.".format(html.escape(chat.title), mention_html(str(user.id), user.first_name))
 
             elif amount < 3:
                 await message.reply_text("Antiflood has to be either 0 (disabled), or a number bigger than 3!")
@@ -102,7 +102,7 @@ async def set_flood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
                        "\n#SETFLOOD" \
                        "\n<b>Admin:</b> {}" \
                        "\nSet antiflood to <code>{}</code>.".format(html.escape(chat.title),
-                                                                    mention_html(user.id, user.first_name), amount)
+                                                                    mention_html(str(user.id), user.first_name), amount)
 
         else:
             await message.reply_text("Unrecognised argument - please use a number, 'off', or 'no'.")
@@ -128,9 +128,9 @@ def __migrate__(old_chat_id, new_chat_id):
 def __chat_settings__(chat_id, user_id):
     limit = sql.get_flood_limit(chat_id)
     if limit == 0:
-        return "*Not* currently enforcing flood control."
+        return "*Not* currently enforcing flood control\."
     else:
-        return "Antiflood is set to `{}` messages.".format(limit)
+        return "Antiflood is set to `{}` messages\.".format(limit)
 
 
 __help__ = """

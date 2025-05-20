@@ -57,7 +57,10 @@ def update_flood(chat_id: str, user_id, is_channel) -> bool:
 
 
 def get_flood_limit(chat_id):
-    return CHAT_FLOOD[str(chat_id)][3]
+    if str(chat_id) in CHAT_FLOOD:
+        return CHAT_FLOOD[str(chat_id)][3]
+    else:
+        return 0
 
 
 def migrate_chat(old_chat_id, new_chat_id):
