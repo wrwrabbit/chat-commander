@@ -4,7 +4,7 @@ import importlib
 import re
 from typing import Optional
 
-from telegram import Message, Chat, Update, Bot, User
+from telegram import Message, Chat, Update, Bot
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode, ChatType
 from telegram.error import BadRequest, TimedOut, NetworkError, ChatMigrated, TelegramError, Forbidden
@@ -12,7 +12,7 @@ from telegram.ext import ContextTypes, MessageHandler, CallbackQueryHandler, fil
 from telegram.helpers import escape_markdown
 
 from tg_bot.modules.helper_funcs.handlers import create_handler
-from tg_bot import application, TOKEN, WEBHOOK, OWNER_ID, DONATION_LINK, CERT_PATH, PORT, URL, LOGGER, ALLOW_EXCL
+from tg_bot import application, TOKEN, WEBHOOK, DONATION_LINK, CERT_PATH, PORT, URL, LOGGER, ALLOW_EXCL
 # needed to dynamically load modules
 # NOTE: Module order is not guaranteed, specify that in the config file!
 from tg_bot.modules import ALL_MODULES
@@ -20,18 +20,19 @@ from tg_bot.modules.helper_funcs.chat_status import is_user_admin
 from tg_bot.modules.helper_funcs.misc import paginate_modules
 
 PM_START_TEXT = """
-Hi {}, my name is {}! If you have any questions on how to use me, read /help - and then head to @MarieSupport.
+Hi {}, my name is {}\! If you have any questions on how to use me, read /help \- and then head to @MarieSupport\.
 
-I'm a group manager bot built in python3, using the python-telegram-bot library, and am fully opensource; \
-you can find what makes me tick [here](github.com/PaulSonOfLars/tgbot)!
+I\'m a group manager bot built in python3, using the python\-telegram\-bot library, and am fully opensource; \
+you can find what makes me tick [here](github.com/PaulSonOfLars/tgbot)\!
 
 Feel free to submit pull requests on github, or to contact my support group, @MarieSupport, with any bugs, questions \
-or feature requests you might have :)
-I also have a news channel, @MarieNews for announcements on new features, downtime, etc.
+or feature requests you might have :\)
+I also have a news channel, @MarieNews for announcements on new features, downtime, etc\.
 
-You can find the list of available commands with /help.
+You can find the list of available commands with /help\.
 
-If you're enjoying using me, and/or would like to help me survive in the wild, hit /donate to help fund/upgrade my VPS!
+If you\'re enjoying using me, and/or would like to help me survive in the wild, hit /donate to help fund/upgrade my \
+VPS\!
 """
 
 HELP_STRINGS = "Depricated"
@@ -155,31 +156,43 @@ async def test(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    args = update.effective_message.text.split(" ")[1:]
-    if update.effective_chat.type == ChatType.PRIVATE:
-        if len(args) >= 1:
-            if args[0].lower() == "help":
-                await send_help(update.effective_chat.id, HELP_STRINGS)
+    # Получаем аргументы команды (без учёта регистра)
+    args = context.args
+    chat = update.effective_chat
+    message = update.effective_message
+    if chat.type == ChatType.PRIVATE:
+        user = update.effective_user
+        if args:
+            arg = args[0].lower()
 
-            elif args[0].lower().startswith("stngs_"):
-                match = re.match("stngs_(.*)", args[0].lower())
-                chat = await context.bot.get_сhat(match.group(1))
+            # Обработка /start help
+            if arg == "help":
+                await send_help(chat.id, await get_formatted_help_string())
 
-                if is_user_admin(chat, update.effective_user.id):
-                    await send_settings(context, match.group(1), update.effective_user.id, False)
-                else:
-                    await send_settings(context, match.group(1), update.effective_user.id, True)
+            # Обработка /start stngs_<chat_id>
+            elif arg.startswith("stngs_"):
+                if match := re.match(r"stngs_(.*)", arg):
+                    chat_to_manage = await context.bot.get_chat(match.group(1))
+                    is_admin = await is_user_admin(chat_to_manage, user.id, context)
+                    await send_settings(
+                            context,
+                            chat_id=match.group(1),
+                            user_id=user.id,
+                            user=not is_admin
+                    )
 
-            elif args[0][1:].isdigit() and "rules" in IMPORTED:
-                await IMPORTED["rules"].send_rules(update, args[0], from_pm=True)
+            # Обработка /start <номер> (для правил)
+            elif arg.lstrip('-').isdigit() and "rules" in IMPORTED:
+                await IMPORTED["rules"].send_rules(update, arg, from_pm=True)
 
         else:
-            first_name = update.effective_user.first_name
-            await update.effective_message.reply_text(
-                PM_START_TEXT.format(escape_markdown(first_name), escape_markdown(context.bot.first_name), OWNER_ID),
+            first_name = user.first_name
+            await message.reply_text(
+                PM_START_TEXT.format(escape_markdown(first_name, version=2),
+                                     escape_markdown(context.bot.first_name, version=2)),
                 parse_mode=ParseMode.MARKDOWN_V2)
     else:
-        await update.effective_message.reply_text("Yo, whadup?")
+        await message.reply_text("Yo, whadup?")
 
 
 # for test purposes
@@ -306,119 +319,117 @@ async def get_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_help(chat.id, current_help_text)
 
 
-async def send_settings(context: ContextTypes.DEFAULT_TYPE, chat_id, user_id, user=False):
+async def send_settings(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_id: int, user: bool = False) -> None:
     if user:
         if USER_SETTINGS:
             settings = "\n\n".join(
-                "*{}*:\n{}".format(mod.__mod_name__, mod.__user_settings__(user_id)) for mod in USER_SETTINGS.values())
+                "*{}*:\n{}".format(escape_markdown(mod.__mod_name__, version=2), mod.__user_settings__(user_id)
+            ) for mod in USER_SETTINGS.values())
             await context.bot.send_message(user_id, "These are your current settings:" + "\n\n" + settings,
-                                        parse_mode=ParseMode.MARKDOWN_V2)
-
+                                           parse_mode=ParseMode.MARKDOWN_V2)
         else:
-            await context.bot.send_message(user_id, "Seems like there aren't any user specific settings available :'(",
-                                        parse_mode=ParseMode.MARKDOWN_V2)
-
+            await context.bot.send_message(chat_id=user_id,
+                                           text="Seems like there aren\'t any user specific settings available :\(",
+                                           parse_mode=ParseMode.MARKDOWN_V2)
     else:
         if CHAT_SETTINGS:
-            chat = await context.bot.getChat(chat_id).title
-            await context.bot.send_message(user_id,
-                                        text="Which module would you like to check {}'s settings for?".format(
-                                            chat.title),
-                                        reply_markup=InlineKeyboardMarkup(
-                                            paginate_modules(0, CHAT_SETTINGS, "stngs", chat=chat_id)))
+            chat = await context.bot.get_chat(chat_id)
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="Which module would you like to check {}\'s settings for?".format(
+                    escape_markdown(chat.title, version=2)),
+                reply_markup=InlineKeyboardMarkup(
+                    paginate_modules(0, CHAT_SETTINGS, "stngs", chat=chat_id)
+            ), parse_mode=ParseMode.MARKDOWN_V2)
         else:
-            await context.bot.send_message(user_id, "Seems like there aren't any chat settings available :'(\nSend this "
-                                                 "in a group chat you're admin in to find its current settings!",
-                                        parse_mode=ParseMode.MARKDOWN_V2)
+            await context.bot.send_message(chat_id=user_id,
+                text="Seems like there aren\'t any chat settings available :\(\n"
+                     "Send this in a group chat you\'re admin in to find its current settings\!",
+                parse_mode=ParseMode.MARKDOWN_V2)
 
 
 
-def settings_button(bot: Bot, update: Update):
+async def settings_button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     user = update.effective_user
     mod_match = re.match(r"stngs_module\((.+?),(.+?)\)", query.data)
     prev_match = re.match(r"stngs_prev\((.+?),(.+?)\)", query.data)
     next_match = re.match(r"stngs_next\((.+?),(.+?)\)", query.data)
     back_match = re.match(r"stngs_back\((.+?)\)", query.data)
+
+    await query.answer()  # Подтверждаем нажатие
     try:
         if mod_match:
             chat_id = mod_match.group(1)
             module = mod_match.group(2)
-            chat = bot.get_chat(chat_id)
-            text = "*{}* has the following settings for the *{}* module:\n\n".format(escape_markdown(chat.title),
-                                                                                     CHAT_SETTINGS[
-                                                                                         module].__mod_name__) + \
+            chat = await context.bot.get_chat(int(chat_id))
+            text = "*{}* has the following settings for the *{}* module:\n\n".format(
+                escape_markdown(chat.title, version=2),
+                escape_markdown(CHAT_SETTINGS[module].__mod_name__, version=2)) + \
                    CHAT_SETTINGS[module].__chat_settings__(chat_id, user.id)
-            query.message.reply_text(text=text,
-                                     parse_mode=ParseMode.MARKDOWN,
-                                     reply_markup=InlineKeyboardMarkup(
+            await query.edit_message_text(text=text,
+                                          parse_mode=ParseMode.MARKDOWN_V2,
+                                          reply_markup=InlineKeyboardMarkup(
                                          [[InlineKeyboardButton(text="Назад",
                                                                 callback_data="stngs_back({})".format(chat_id))]]))
 
         elif prev_match:
             chat_id = prev_match.group(1)
             curr_page = int(prev_match.group(2))
-            chat = bot.get_chat(chat_id)
-            query.message.reply_text("Hi there! There are quite a few settings for {} - go ahead and pick what "
-                                     "you're interested in.".format(chat.title),
-                                     reply_markup=InlineKeyboardMarkup(
-                                         paginate_modules(curr_page - 1, CHAT_SETTINGS, "stngs",
-                                                          chat=chat_id)))
+            chat = await context.bot.get_chat(int(chat_id))
+            await query.edit_message_text("Hi there\! There are quite a few settings for {} - go ahead and pick what "
+                                     "you\'re interested in\.".format(escape_markdown(chat.title, version=2)),
+                                          parse_mode=ParseMode.MARKDOWN_V2,
+                                          reply_markup=InlineKeyboardMarkup(
+                                              paginate_modules(curr_page - 1, CHAT_SETTINGS, "stngs",
+                                                               chat=chat_id)))
 
         elif next_match:
             chat_id = next_match.group(1)
             next_page = int(next_match.group(2))
-            chat = bot.get_chat(chat_id)
-            query.message.reply_text("Hi there! There are quite a few settings for {} - go ahead and pick what "
-                                     "you're interested in.".format(chat.title),
-                                     reply_markup=InlineKeyboardMarkup(
-                                         paginate_modules(next_page + 1, CHAT_SETTINGS, "stngs",
-                                                          chat=chat_id)))
+            chat = await context.bot.get_chat(int(chat_id))
+            await query.edit_message_text("Hi there\! There are quite a few settings for {} - go ahead and pick what "
+                                     "you\'re interested in\.".format(escape_markdown(chat.title, version=2)),
+                                          parse_mode=ParseMode.MARKDOWN_V2,
+                                          reply_markup=InlineKeyboardMarkup(
+                                              paginate_modules(next_page + 1, CHAT_SETTINGS, "stngs",
+                                                               chat=chat_id)))
 
         elif back_match:
             chat_id = back_match.group(1)
-            chat = bot.get_chat(chat_id)
-            query.message.reply_text(text="Hi there! There are quite a few settings for {} - go ahead and pick what "
-                                          "you're interested in.".format(escape_markdown(chat.title)),
-                                     parse_mode=ParseMode.MARKDOWN,
-                                     reply_markup=InlineKeyboardMarkup(paginate_modules(0, CHAT_SETTINGS, "stngs",
-                                                                                        chat=chat_id)))
+            chat = await context.bot.get_chat(int(chat_id))
+            await query.edit_message_text(text="Hi there\! There are quite a few settings for {} \- go ahead and pick what "
+                                          "you\'re interested in\.".format(escape_markdown(chat.title, version=2)),
+                                     parse_mode=ParseMode.MARKDOWN_V2,
+                                     reply_markup=InlineKeyboardMarkup(
+                                         paginate_modules(0, CHAT_SETTINGS, "stngs",
+                                                          chat=chat_id)))
 
         # ensure no spinny white circle
-        bot.answer_callback_query(query.id)
-        query.message.delete()
+        await query.answer()
     except BadRequest as excp:
-        if excp.message == "Message is not modified":
-            pass
-        elif excp.message == "Query_id_invalid":
-            pass
-        elif excp.message == "Message can't be deleted":
-            pass
-        else:
-            LOGGER.exception("Exception in settings buttons. %s", str(query.data))
+        LOGGER.exception("Exception %s in settings buttons. %s", excp.message, str(query.data))
 
 
-
-def get_settings(bot: Bot, update: Update):
-    chat = update.effective_chat  # type: Optional[Chat]
-    user = update.effective_user  # type: Optional[User]
-    msg = update.effective_message  # type: Optional[Message]
-    args = msg.text.split(None, 1)
+async def get_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat = update.effective_chat
+    user = update.effective_user
+    message = update.effective_message
 
     # ONLY send settings in PM
     if chat.type != chat.PRIVATE:
-        if is_user_admin(chat, user.id):
-            text = "Click here to get this chat's settings, as well as yours."
-            msg.reply_text(text,
-                           reply_markup=InlineKeyboardMarkup(
-                               [[InlineKeyboardButton(text="Settings",
-                                                      url="t.me/{}?start=stngs_{}".format(
-                                                          bot.username, chat.id))]]))
+        if await is_user_admin(chat, user.id, context):
+            text = "Click here to get this chat\'s settings, as well as yours."
         else:
             text = "Click here to check your settings."
 
+        await message.reply_text(
+            text=text,
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton(text="Settings",
+                        url=f"t.me/{context.bot.username}?start=stngs_{chat.id}")]]))
     else:
-        send_settings(chat.id, user.id, True)
+        await send_settings(context, chat.id, user.id, user=True)
 
 
 
@@ -468,23 +479,23 @@ def main():
     application.add_handler(MessageHandler(filters.ALL, rate_limiter.check), group=-1)
 
     test_handler = create_handler("test", test)
-    # start_handler = CommandHandler("start", start, pass_args=True)
+    start_handler = create_handler("start", start)
 
     help_handler = create_handler("help", get_help)
     help_callback_handler = CallbackQueryHandler(help_button, pattern=r"help_")
 
-    #settings_handler = CommandHandler("settings", get_settings)
-    #settings_callback_handler = CallbackQueryHandler(settings_button, pattern=r"stngs_")
+    settings_handler = create_handler("settings", get_settings)
+    settings_callback_handler = CallbackQueryHandler(settings_button, pattern=r"stngs_")
 
     #donate_handler = CommandHandler("donate", donate)
     #migrate_handler = MessageHandler(Filters.status_update.migrate, migrate_chats)
 
     application.add_handler(test_handler)
-    # dispatcher.add_handler(start_handler)
+    application.add_handler(start_handler)
     application.add_handler(help_handler)
-    #dispatcher.add_handler(settings_handler)
+    application.add_handler(settings_handler)
     application.add_handler(help_callback_handler)
-    #application.add_handler(settings_callback_handler)
+    application.add_handler(settings_callback_handler)
     #dispatcher.add_handler(migrate_handler)
     #dispatcher.add_handler(donate_handler)
 
