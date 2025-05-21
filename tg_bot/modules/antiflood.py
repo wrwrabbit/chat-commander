@@ -109,7 +109,7 @@ async def set_flood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
 
     return ""
 
-
+@user_admin
 async def flood(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat  # type: Optional[Chat]
 
