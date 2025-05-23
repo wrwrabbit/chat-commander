@@ -80,6 +80,11 @@ async def set_flood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
         if val == "off" or val == "no" or val == "0":
             sql.set_flood(chat.id, 0)
             await message.reply_text("Antiflood has been disabled.")
+            return "<b>{}:</b>" \
+                   "\n#SETFLOOD" \
+                   "\n<b>Admin:</b> {}" \
+                   "\nDisabled antiflood.".format(html.escape(chat.title),
+                                                  mention_html(str(user.id), user.first_name))
 
         elif val.isdigit():
             amount = int(val)
@@ -89,7 +94,8 @@ async def set_flood(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
                 return "<b>{}:</b>" \
                        "\n#SETFLOOD" \
                        "\n<b>Admin:</b> {}" \
-                       "\nDisabled antiflood.".format(html.escape(chat.title), mention_html(str(user.id), user.first_name))
+                       "\nDisabled antiflood.".format(html.escape(chat.title),
+                                                      mention_html(str(user.id), user.first_name))
 
             elif amount < 3:
                 await message.reply_text("Antiflood has to be either 0 (disabled), or a number bigger than 3!")
