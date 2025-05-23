@@ -114,8 +114,14 @@ def bot_admin(func: Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[Any]
 def user_admin(func: Callable[[Update, ContextTypes.DEFAULT_TYPE], Awaitable[Any]]):
     @wraps(func)
     async def is_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        user = update.effective_user
-        if user and await is_user_admin(update.effective_chat, user.id, context):
+        chat = update.effective_chat
+        if chat.type == ChatType.CHANNEL:
+            if update.channel_post.sender_chat:
+                return await func(update, context)
+            user = update.channel_post.from_user
+        else:
+            user = update.effective_user
+        if user and await is_user_admin(chat, user.id, context):
             return await func(update, context)
 
         if DEL_CMDS and update.effective_message:
