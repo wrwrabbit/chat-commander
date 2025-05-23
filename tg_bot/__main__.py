@@ -277,16 +277,9 @@ async def help_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # ТОЛЬКО подтверждаем callback-запрос (удаление сообщения убрано)
         await context.bot.answer_callback_query(query.id)
     except BadRequest as excp:
-        LOGGER.exception("Exception %s in help buttons. %s", excp.message, str(query.data))
-        if excp.message == "Message is not modified":
-            pass
-        elif excp.message == "Query_id_invalid":
-            pass
-        elif excp.message == "Message can't be deleted":
-            pass
-        elif "Query is too old" in excp.message:
+        LOGGER.exception("Exception '%s' in help buttons. %s", excp.message, str(query.data))
+        if "Query is too old" in excp.message:
             await context.bot.send_message(query.message.chat.id, "Menu is expired. Please type '/help' to open new menu")
-            pass
 
 
 
@@ -525,36 +518,36 @@ class RateLimitMiddleware:
     def __init__(self):
         self._global_lock = Lock()
         self.locks = {}  # Regular dict
-        self.user_limits = {}  # {user_id: (last_time, count)}
+        self.chat_limits = {}  # {user_id: (last_time, count)}
 
     async def check(self, update: Update, context:ContextTypes.DEFAULT_TYPE):
-        user_id = update.effective_user.id
-        chat_id = update.effective_chat.id
+        if not update.effective_chat is None:
+            chat_id = update.effective_chat.id
 
-        async with self._global_lock:
-            if user_id not in self.locks:
-                self.locks[user_id] = Lock()
+            async with self._global_lock:
+                if chat_id not in self.locks:
+                    self.locks[chat_id] = Lock()
 
-        async with self.locks[user_id]:
-            now = datetime.now()
-            last_time, cnt = self.user_limits.get(user_id, (now, 0))
+            async with self.locks[chat_id]:
+                now = datetime.now()
+                last_time, cnt = self.chat_limits.get(chat_id, (now, 0))
 
-            if now - last_time < timedelta(seconds=1):  # Проверяем, прошла ли 1 секунда
-                cnt += 1
-                if cnt > 10:  # Лимит: 10 запросов в секунду
-                    try:
-                        LOGGER.info(f"Слишком много запросов! Подождите секунду. user_id={user_id}")
+                if now - last_time < timedelta(seconds=1):  # Проверяем, прошла ли 1 секунда
+                    cnt += 1
+                    if cnt > 10:  # Лимит: 10 запросов в секунду
+                        try:
+                            LOGGER.info(f"Слишком много запросов! Подождите секунду. chat_id={chat_id}")
 
-                        await context.bot.delete_message(
-                            chat_id=chat_id,
-                            message_id=update.effective_message.message_id,
-                        )
-                    finally:
-                        raise ApplicationHandlerStop
-            else:
-                cnt = 1  # Сброс счётчика, если прошла 1 сек
+                            await context.bot.delete_message(
+                                chat_id=chat_id,
+                                message_id=update.effective_message.message_id,
+                            )
+                        finally:
+                            raise ApplicationHandlerStop
+                else:
+                    cnt = 1  # Сброс счётчика, если прошла 1 сек
 
-            self.user_limits[user_id] = (now, cnt)
+                self.chat_limits[chat_id] = (now, cnt)
 
 
 if __name__ == '__main__':
