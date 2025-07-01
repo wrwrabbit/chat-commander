@@ -39,7 +39,6 @@ async def listregexpnameban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.effective_message.reply_text("There are no regexp in name ban")
 
-# @run_async
 @user_admin
 @loggable
 async def regexpnameunban(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -93,7 +92,6 @@ async def g_listregexpnameban(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         await update.effective_message.reply_text("There are no regexp in ban globally")
 
-# @run_async
 @user_admin
 @loggable
 async def g_regexpnameunban(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -117,7 +115,6 @@ async def g_regexpnameunban(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"<b>Regex:</b> {html.escape(regex)}")
 
 
-# @run_async
 async def remove_banned_nicknames(update: Update, context: ContextTypes.DEFAULT_TYPE):
     joined_names = update.effective_message.new_chat_members
     chat = update.effective_chat
