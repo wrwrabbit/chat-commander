@@ -1,224 +1,245 @@
 import html
 import re
-from typing import Optional, List
 
-from telegram import Message, Chat, Update, Bot, User
-from telegram.error import BadRequest
-from telegram.ext import run_async, CommandHandler, Filters, MessageHandler
-from telegram.utils.helpers import mention_html
+from telegram import Update
+from telegram.ext import (
+    MessageHandler,
+    ContextTypes,
+    filters
+)
+from telegram.helpers import mention_html
 
-from tg_bot import dispatcher, BAN_STICKER, LOGGER, SUDO_USERS
-from tg_bot.modules.disable import DisableAbleCommandHandler
-from tg_bot.modules.helper_funcs.chat_status import bot_admin, user_admin, is_user_ban_protected, can_restrict, \
-    is_user_admin, is_user_in_chat, bot_can_delete
-from tg_bot.modules.helper_funcs.extraction import extract_user_and_text
-from tg_bot.modules.helper_funcs.string_handling import extract_time
+from tg_bot import application, SUDO_USERS
+from tg_bot.modules.helper_funcs.chat_status import (
+    user_admin,
+    bot_can_delete
+)
+from tg_bot.modules.helper_funcs.handlers import create_handler
 from tg_bot.modules.log_channel import loggable
-from tg_bot.modules.sql import users_sql
 from tg_bot.modules.sql import regex_user_bans_sql as sql
 
 
 @user_admin
 @bot_can_delete
 @loggable
-def user_ban_add_exclusion(bot: Bot, update: Update) -> str:
-    args = update.effective_message.text.split(" ")[1:]
+async def user_ban_add_exclusion(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    args = context.args
+    if not args or args[0] is None:
+        await update.effective_message.reply_text("Username value is missing")
+        return ""
+
     username = args[0]
-    if username is None:
-        update.effective_message.reply_text("Username value is missing")
-        return
     sql.add_ban_exclusion(username)
-    update.effective_message.reply_text("Username " + username + " was added to ban exclusions")
+    await update.effective_message.reply_text(f"Username {username} was added to ban exclusions")
+
+    return (f"<b>{html.escape(update.effective_chat.title)}:</b>\n"
+            f"#BAN_EXCLUSION_ADD\n"
+            f"<b>Admin:</b> {mention_html(update.effective_user.id, update.effective_user.first_name)}\n"
+            f"<b>Username:</b> {html.escape(username)}")
 
 @user_admin
 @bot_can_delete
 @loggable
-def userregexpadd(bot: Bot, update: Update) -> str:
-    args = update.effective_message.text.split(" ")[1:]
-    message = update.effective_message  # type: Optional[Message]
-    chat_id = update.effective_chat.id
+async def userregexpadd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    args = context.args
+    if not args or args[0] is None:
+        await update.effective_message.reply_text("Regexp value is missing")
+        return ""
 
     regex = args[0]
-    if regex is None:
-        update.effective_message.reply_text("Regexp value is missing")
-        return
+    chat_id = update.effective_chat.id
     sql.add_regex_bans(chat_id, regex)
-    update.effective_message.reply_text("Regex " + regex + " was added to ban list")
+    await update.effective_message.reply_text("Regex " + regex + " was added to ban list")
+
+    return (f"<b>{html.escape(update.effective_chat.title)}:</b>\n"
+            f"#REGEX_BAN_ADD\n"
+            f"<b>Admin:</b> {mention_html(update.effective_user.id, update.effective_user.first_name)}\n"
+            f"<b>Regex:</b> {html.escape(regex)}")
 
 @user_admin
 @loggable
-def user_ban_exclusion_list(bot: Bot, update: Update):
+async def user_ban_exclusion_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = sql.get_ban_exclusions()
-    if res is not None:
-        res = list(map(lambda x: x.username_to_exclude, res))
-        update.effective_message.reply_text("User ban exclusions: " + ','.join(res))
-    elif res is [] or res is None:
-        update.effective_message.reply_text("There are no user ban exclusions")
+    if res:
+        res = [x.username_to_exclude for x in res]
+        await update.effective_message.reply_text("User ban exclusions: " + ','.join(res))
+    else:
+        await update.effective_message.reply_text("There are no user ban exclusions")
 
 @user_admin
 @loggable
-def userregexplist(bot: Bot, update: Update):
+async def userregexplist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     res = sql.get_regex_bans(update.effective_chat.id)
-    if res is not None:
-        res = list(map(lambda x: x.regex_to_ban, res))
-        update.effective_message.reply_text("Regexp banned in this chat: " + ','.join(res))
-    elif res is [] or res is None:
-        update.effective_message.reply_text("There are no regexp in ban")
+    if res:
+        res = [x.regex_to_ban for x in res]
+        await update.effective_message.reply_text("Regexp banned in this chat: " + ','.join(res))
+    else:
+        await update.effective_message.reply_text("There are no regexp in ban")
 
-# @run_async
 @user_admin
 @loggable
-def user_ban_delete_exclusion(bot: Bot, update: Update):
-    args = update.effective_message.text.split(" ")[1:]
+async def user_ban_delete_exclusion(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if not args or args[0] is None:
+        await update.effective_message.reply_text("Username value is missing")
+        return
+
     username = args[0]
-    if username is None:
-        update.effective_message.reply_text("Username value is missing")
-        return
-    sql.delete_ban_exclusion(username)
-    update.effective_message.reply_text("Username " + username + " was removed from ban exclusions")
+    if sql.delete_ban_exclusion(username):
+        await update.effective_message.reply_text("Username " + username + " was removed from ban exclusions")
+    else:
+        await update.effective_message.reply_text("This username was not found in exclusions list")
 
-# @run_async
 @user_admin
 @loggable
-def userregexpdelete(bot: Bot, update: Update):
-    args = update.effective_message.text.split(" ")[1:]
-    regex = args[0]
-    if regex is None:
-        update.effective_message.reply_text("Regexp value is missing")
+async def userregexpdelete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args
+    if not args  or args[0] is None:
+        await update.effective_message.reply_text("Regexp value is missing")
         return
+
+    regex = args[0]
     chat_id = update.effective_chat.id
-    sql.delete_regex_ban(chat_id, regex)
-    update.effective_message.reply_text("Regexp " + regex + " was removed from ban list")
+    if sql.delete_regex_ban(chat_id, regex):
+        await update.effective_message.reply_text("Regexp " + regex + " was removed from ban list")
+    else:
+        await update.effective_message.reply_text("This regex was not found in ban list")
 
 @user_admin
 @bot_can_delete
 @loggable
-def g_userregexpadd(bot: Bot, update: Update) -> str:
-    args = update.effective_message.text.split(" ")[1:]
-    if int(update.effective_user.id) not in SUDO_USERS:
-        update.effective_message.reply_text("Only SUDO users can use this command")
-        return
+async def g_userregexpadd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> str:
+    if update.effective_user.id not in SUDO_USERS:
+        await update.effective_message.reply_text("Only SUDO users can use this command")
+        return ""
 
-    message = update.effective_message  # type: Optional[Message]
+    args = context.args
+    if not args:
+        await update.effective_message.reply_text("Regexp value is missing")
+        return ""
 
     regex = args[0]
-    if regex is None:
-        update.effective_message.reply_text("Regexp value is missing")
-        return
     sql.add_regex_global_bans(regex)
-    update.effective_message.reply_text("Regex " + regex + " was added to global ban list")
+    await update.effective_message.reply_text("Regex " + regex + " was added to global ban list")
+
+    return (f"<b>GLOBAL:</b>\n"
+            f"#GLOBAL_REGEX_BAN_ADD\n"
+            f"<b>Admin:</b> {mention_html(update.effective_user.id, update.effective_user.first_name)}\n"
+            f"<b>Regex:</b> {html.escape(regex)}")
 
 @user_admin
 @loggable
-def g_userregexplist(bot: Bot, update: Update):
-    if int(update.effective_user.id) not in SUDO_USERS:
-        update.effective_message.reply_text("Only SUDO users can use this command")
+async def g_userregexplist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in SUDO_USERS:
+        await update.effective_message.reply_text("Only SUDO users can use this command")
         return
 
     res = sql.get_regex_global_bans()
-    if res is not None:
-        res = list(map(lambda x: x.regex_to_ban, res))
-        update.effective_message.reply_text("Regexp banned globally: " + ','.join(res))
-    elif res is [] or res is None:
-        update.effective_message.reply_text("There are no regexp in ban globally")
+    if res:
+        res = [x.regex_to_ban for x in res]
+        await update.effective_message.reply_text("Regexp banned globally: " + ','.join(res))
+    else:
+        await update.effective_message.reply_text("There are no regexp in ban globally")
 
-# @run_async
 @user_admin
 @loggable
-def g_userregexpdelete(bot: Bot, update: Update):
-    args = update.effective_message.text.split(" ")[1:]
-    if int(update.effective_user.id) not in SUDO_USERS:
-        update.effective_message.reply_text("Only SUDO users can use this command")
+async def g_userregexpdelete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in SUDO_USERS:
+        await update.effective_message.reply_text("Only SUDO users can use this command")
+        return
+
+    args = context.args
+    if not args:
+        await update.effective_message.reply_text("Regexp value is missing")
         return
 
     regex = args[0]
-    if regex is None:
-        update.effective_message.reply_text("Regexp value is missing")
-        return
-    chat_id = update.effective_chat.id
-    sql.delete_regex_global_ban(regex)
-    update.effective_message.reply_text("Regexp " + regex + " was removed from global ban list")
+    if sql.delete_regex_global_ban(regex):
+        await update.effective_message.reply_text("Regexp " + regex + " was removed from global ban list")
+    else:
+        await update.effective_message.reply_text("This regex was not found in global ban list")
 
-# @run_async
-def remove_banned_nicknames(bot: Bot, update: Update):
-    joined_names = update.effective_message.new_chat_members
+
+async def remove_banned_nicknames(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    new_members = update.effective_message.new_chat_members
     chat = update.effective_chat
-    regexes = list(map(lambda x: x.regex_to_ban, sql.get_regex_bans(chat.id)))
-    regexes_global = list(map(lambda x: x.regex_to_ban, sql.get_regex_global_bans()))
 
-    if joined_names is not None:
-        for name in joined_names:
-            if sql.is_ban_exclusion_exists(name):
-                continue
-            for regex in regexes:
-                is_banned = re.match(regex, name.username)
+    if not new_members:
+        return
 
-                if is_banned:
-                    update.effective_message.reply_text("#бан_банан 🍌 тебе!")
-                    chat.ban_member(name.id)
-                    break
+    regexes = [x.regex_to_ban for x in sql.get_regex_bans(chat.id)]
+    regexes_global = [x.regex_to_ban for x in sql.get_regex_global_bans()]
+    
+    LOGGER.info(f"Chat regexes: {regexes}, Global regexes: {regexes_global}")
 
-            for regex in regexes_global:
-                is_banned = re.match(regex, name.username)
+    for user in new_members:
+        if sql.is_ban_exclusion_exists(user.username):
+            continue
 
-                if is_banned:
-                    update.effective_message.reply_text("#бан_банан 🍌 тебе!")
-                    chat.ban_member(name.id)
-                    break
+        for regex in regexes + regexes_global:
+            if user.username and re.search(regex, user.username):
+                await update.effective_message.reply_text("#бан_банан 🍌 тебе!")
+                await chat.ban_member(user.id)
+                break
 
-                # is_exists_in_global = sql.is_global_regex_ban_exists(joined_name)
-                # if is_exists_in_global:
-                #     update.effective_message.reply_text("User fitting " + regex + " banned in global ban list")
-                #     update.effective_message.delete()
-                #     break
 
 __help__ = """
-*Только администратор:*
-Блокирует новых участников чата, ник (имя пользователя) которых соответствует одному из добавленных шаблонов регулярных выражений.
-Имена пользователей обрабатываются без символа @ в начале. Например, имя_пользователя вместо @имя_пользователя
- - /user\_regexpban\_add [регулярное выражение] - добавить регулярное выражение
- - /user\_regexpban\_list - список регулярных выражений
- - /user\_regexpban\_del [регулярное выражение] - удалить регулярное выражение. Не разблокирует уже забаненных пользователей.
- 
- - /g\_user\_regexpban\_add [регулярное выражение] - добавить регулярное выражение
- - /g\_user\_regexpban\_list - список глобальных регулярных выражений
- - /g\_user\_regexpban\_del [регулярное выражение] - удалить глобальное регулярное выражение. Не разблокирует уже забаненных пользователей.
- 
- - /user\_ban\_add\_exclusion [username] - добавить username
- - /user\_ban\_exclusion\_list - список username
- - /user\_ban\_delete\_exclusion [username] - удалить username
+*Только администратор*:
+Блокирует новых участников чата, ник \(имя пользователя\) которых соответствует одному из добавленных шаблонов регулярных выражений\\.
+Имена пользователей обрабатываются без символа @ в начале\\. Например, имя\_пользователя вместо @имя\_пользователя
+ \- `/user\_regexpban\_add` \\[регулярное выражение\\] \\- добавить регулярное выражение
+ \- `/user\_regexpban\_list` \\- список регулярных выражений
+ \- `/user\_regexpban\_del` \\[регулярное выражение\\] \\- удалить регулярное выражение\\. Не разблокирует уже забаненных пользователей\\.
 
-Например: блокировать имена, состящие из минимум трёх и более букв подряд и двух цифр (sdf11, dfsd87): `/regexpuserban ^[a-zA-Z]{3,}[0-9]{2}$` Если в имени \
-две буквы (aa11), три цифры (aaaa111), среди букв есть лишняя цифра(aa1a11), они не будут заблокированы.
+ \- `/g\_user\_regexpban\_add` \\[регулярное выражение\\] \\- добавить глобальноре регулярное выражение
+ \- `/g\_user\_regexpban\_list` \\- список глобальных регулярных выражений
+ \- `/g\_user\_regexpban\_del` \\[регулярное выражение\\] \\- удалить глобальное регулярное выражение\\. Не разблокирует уже забаненных пользователей\\.
+
+ \- `/user\_ban\_add\_exclusion` \\[username\\] \\- добавить username
+ \- `/user\_ban\_exclusion\_list` \\- список username
+ \- `/user\_ban\_delete\_exclusion` \\[username\\] \\- удалить username
+
+Например: блокировать имена, состоящие из минимум трёх и более букв подряд и двух цифр \(sdf11, dfsd87\): `/regexpuserban ^\\[a-zA-Z\\]\\{3,\\}\\[0-9\\]\\{2\\}$` Если в имени \\
+две буквы \(aa11\), три цифры \(aaaa111\), среди букв есть лишняя цифра\(aa1a11\), они не будут заблокированы\\.
 """
 
 __mod_name__ = "Regexp ник бан"
 
-REGEXPUSERBAN_HANDLER = CommandHandler("user_regexpban_add", userregexpadd, pass_args=True, filters=Filters.chat_type.groups)
-LISTREGEXPUSERBAN_HANDLER = CommandHandler("user_regexpban_list", userregexplist, pass_args=False, filters=Filters.chat_type.groups)
-UNBANREGEXPUSERBAN_HANDLER = CommandHandler("user_regexpban_del", userregexpdelete, pass_args=True, filters=Filters.chat_type.groups)
+REGEXPUSERBAN_HANDLER = create_handler("user_regexpban_add", userregexpadd,
+                                       filters=filters.ChatType.GROUPS)
+LISTREGEXPUSERBAN_HANDLER = create_handler("user_regexpban_list", userregexplist,
+                                           filters=filters.ChatType.GROUPS)
+UNBANREGEXPUSERBAN_HANDLER = create_handler("user_regexpban_del", userregexpdelete,
+                                            filters=filters.ChatType.GROUPS)
 
-ADD_BAN_EXCLUSION_HANDLER = CommandHandler("user_ban_add_exclusion", user_ban_add_exclusion, pass_args=True, filters=Filters.chat_type.groups)
-LIST_BAN_EXCLUSION_HANDLER = CommandHandler("user_ban_exclusion_list", user_ban_exclusion_list, pass_args=False, filters=Filters.chat_type.groups)
-DELETE_BAN_EXCLUSION_HANDLER = CommandHandler("user_ban_delete_exclusion", user_ban_delete_exclusion, pass_args=True, filters=Filters.chat_type.groups)
+ADD_BAN_EXCLUSION_HANDLER = create_handler("user_ban_add_exclusion", user_ban_add_exclusion,
+                                           filters=filters.ChatType.GROUPS)
+LIST_BAN_EXCLUSION_HANDLER = create_handler("user_ban_exclusion_list", user_ban_exclusion_list,
+                                            filters=filters.ChatType.GROUPS)
+DELETE_BAN_EXCLUSION_HANDLER = create_handler("user_ban_delete_exclusion", user_ban_delete_exclusion,
+                                              filters=filters.ChatType.GROUPS)
 
-G_REGEXPUSERBAN_HANDLER = CommandHandler("g_user_regexpban_add", g_userregexpadd, pass_args=True, filters=Filters.chat_type.groups)
-G_LISTREGEXPUSERBAN_HANDLER = CommandHandler("g_user_regexpban_list", g_userregexplist, pass_args=False, filters=Filters.chat_type.groups)
-G_UNBANREGEXPUSERBAN_HANDLER = CommandHandler("g_user_regexpban_del", g_userregexpdelete, pass_args=True, filters=Filters.chat_type.groups)
+G_REGEXPUSERBAN_HANDLER = create_handler("g_user_regexpban_add", g_userregexpadd,
+                                         filters=filters.ChatType.GROUPS)
+G_LISTREGEXPUSERBAN_HANDLER = create_handler("g_user_regexpban_list", g_userregexplist,
+                                             filters=filters.ChatType.GROUPS)
+G_UNBANREGEXPUSERBAN_HANDLER = create_handler("g_user_regexpban_del", g_userregexpdelete,
+                                              filters=filters.ChatType.GROUPS)
 
-dispatcher.add_handler(REGEXPUSERBAN_HANDLER)
-dispatcher.add_handler(LISTREGEXPUSERBAN_HANDLER)
-dispatcher.add_handler(UNBANREGEXPUSERBAN_HANDLER)
-
-dispatcher.add_handler(ADD_BAN_EXCLUSION_HANDLER)
-dispatcher.add_handler(LIST_BAN_EXCLUSION_HANDLER)
-dispatcher.add_handler(DELETE_BAN_EXCLUSION_HANDLER)
-
-dispatcher.add_handler(G_REGEXPUSERBAN_HANDLER)
-dispatcher.add_handler(G_LISTREGEXPUSERBAN_HANDLER)
-dispatcher.add_handler(G_UNBANREGEXPUSERBAN_HANDLER)
-
-
+# PERM_GROUP should be an integer defined in your project
 PERM_GROUP = 7
 
-dispatcher.add_handler(MessageHandler(Filters.status_update.new_chat_members, remove_banned_nicknames), PERM_GROUP)
+application.add_handler(REGEXPUSERBAN_HANDLER)
+application.add_handler(LISTREGEXPUSERBAN_HANDLER)
+application.add_handler(UNBANREGEXPUSERBAN_HANDLER)
+
+application.add_handler(ADD_BAN_EXCLUSION_HANDLER)
+application.add_handler(LIST_BAN_EXCLUSION_HANDLER)
+application.add_handler(DELETE_BAN_EXCLUSION_HANDLER)
+
+application.add_handler(G_REGEXPUSERBAN_HANDLER)
+application.add_handler(G_LISTREGEXPUSERBAN_HANDLER)
+application.add_handler(G_UNBANREGEXPUSERBAN_HANDLER)
+
+# MessageHandler for new_chat_members using the new filters syntax
+application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, remove_banned_nicknames), PERM_GROUP)
