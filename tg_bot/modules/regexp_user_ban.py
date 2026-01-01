@@ -9,7 +9,7 @@ from telegram.ext import (
 )
 from telegram.helpers import mention_html
 
-from tg_bot import application, SUDO_USERS
+from tg_bot import application, SUDO_USERS, LOGGER
 from tg_bot.modules.helper_funcs.chat_status import (
     user_admin,
     bot_can_delete
@@ -183,7 +183,7 @@ async def remove_banned_nicknames(update: Update, context: ContextTypes.DEFAULT_
                 break
 
 
-__help__ = """
+__help__ = r"""
 *Только администратор*:
 Блокирует новых участников чата, ник \(имя пользователя\) которых соответствует одному из добавленных шаблонов регулярных выражений\\.
 Имена пользователей обрабатываются без символа @ в начале\\. Например, имя\_пользователя вместо @имя\_пользователя
