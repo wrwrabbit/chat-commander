@@ -138,7 +138,11 @@ async def remove_banned_nicknames(update: Update, context: ContextTypes.DEFAULT_
                 break
 
         for regex in regexes_global:
-            is_banned = user.username and re.match(regex, user.username)
+            pattern = re.compile(regex)
+            is_banned = (
+                    (user.first_name and pattern.match(user.first_name)) or
+                    (user.last_name and pattern.match(user.last_name))
+            )
 
             if is_banned:
                 await update.effective_message.reply_text("#бан_банан 🍌 тебе!")
