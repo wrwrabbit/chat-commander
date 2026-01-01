@@ -2,7 +2,6 @@ import threading
 
 from sqlalchemy import Column, BigInteger, UnicodeText, String, ForeignKey, func, Boolean, ForeignKeyConstraint
 
-from tg_bot import dispatcher
 from tg_bot.modules.sql import BASE, SESSION, ENGINE
 
 
@@ -62,13 +61,28 @@ Chats.__table__.create(checkfirst=True, bind=ENGINE)
 ChatMembers.__table__.create(checkfirst=True, bind=ENGINE)
 
 INSERTION_LOCK = threading.RLock()
+BOT_IN_DB = False
 
 
-def ensure_bot_in_db():
+async def ensure_bot_in_db(bot):
+    """
+    Лениво добавляет бота в таблицу users при первом обращении из уже инициализированного контекста.
+    """
+    global BOT_IN_DB
+    if BOT_IN_DB:
+        return
+
+    # Получаем данные бота вне блокировки, чтобы не держать lock во время await.
+    bot_data = await bot.get_me()
+
     with INSERTION_LOCK:
-        bot = Users(dispatcher.bot.id, False, dispatcher.bot.username)
-        SESSION.merge(bot)
+        if BOT_IN_DB:
+            return
+
+        entry = Users(bot_data.id, False, bot_data.username)
+        SESSION.merge(entry)
         SESSION.commit()
+        BOT_IN_DB = True
 
 
 def update_user(user_id, is_channel, username, chat_id=None, chat_name=None):
@@ -162,9 +176,6 @@ def migrate_chat(old_chat_id, new_chat_id):
             SESSION.add(member)
 
         SESSION.commit()
-
-
-ensure_bot_in_db()
 
 
 def del_user(user_id, is_channel):

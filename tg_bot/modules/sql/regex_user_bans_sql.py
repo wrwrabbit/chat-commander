@@ -90,7 +90,7 @@ def is_regex_ban_exists(chat_id, regex_to_ban):
 
 
 def is_ban_exclusion_exists(username):
-    is_exists = SESSION.query(RegexUserBan).filter(UserBanExclusion.username_to_exclude == username).first() is not None
+    is_exists = SESSION.query(UserBanExclusion).filter(UserBanExclusion.username_to_exclude == username).first() is not None
     SESSION.close()
     return is_exists
 
