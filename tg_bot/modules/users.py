@@ -5,7 +5,7 @@ from typing import Optional
 from telegram import Chat, Message, Update
 from telegram.error import BadRequest, TelegramError
 from telegram.ext import MessageHandler, filters, ContextTypes
-from telegram._messageorigin import MessageOriginUser
+from telegram import MessageOriginUser, MessageOriginChat, MessageOriginChannel
 
 import tg_bot.modules.sql.users_sql as sql
 from tg_bot import application, OWNER_ID, LOGGER
@@ -82,7 +82,17 @@ async def log_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             sql.update_user(repl_msg.sender_chat.id, is_channel, repl_msg.sender_chat.username, chat.id, chat.title)
     if msg.forward_origin:
-        sql.update_user(msg.forward_origin.sender_user.id, False, msg.forward_origin.sender_user.username)
+        forward_origin = msg.forward_origin
+        if isinstance(forward_origin, MessageOriginUser):
+            sql.update_user(forward_origin.sender_user.id, False, forward_origin.sender_user.username)
+        elif isinstance(forward_origin, MessageOriginChat):
+            sender_chat = forward_origin.sender_chat
+            if sender_chat:
+                sql.update_user(sender_chat.id, True, sender_chat.username)
+        elif isinstance(forward_origin, MessageOriginChannel):
+            origin_chat = forward_origin.chat
+            if origin_chat:
+                sql.update_user(origin_chat.id, True, origin_chat.username)
 
 
 async def chats(update: Update, context: ContextTypes.DEFAULT_TYPE):
