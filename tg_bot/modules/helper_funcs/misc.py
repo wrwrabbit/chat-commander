@@ -72,17 +72,17 @@ def paginate_modules(page_n: int, module_dict: Dict, prefix, chat=None) -> List:
     return pairs
 
 
-def send_to_list(bot: Bot, send_to: list, message: str, markdown=False, html=False) -> None:
+async def send_to_list(bot: Bot, send_to: list, message: str, markdown=False, html=False) -> None:
     if html and markdown:
         raise Exception("Can only send with either markdown or HTML!")
     for user_id in set(send_to):
         try:
             if markdown:
-                bot.send_message(user_id, message, parse_mode=ParseMode.MARKDOWN_V2)
+                await bot.send_message(user_id, message, parse_mode=ParseMode.MARKDOWN_V2)
             elif html:
-                bot.send_message(user_id, message, parse_mode=ParseMode.HTML)
+                await bot.send_message(user_id, message, parse_mode=ParseMode.HTML)
             else:
-                bot.send_message(user_id, message)
+                await bot.send_message(user_id, message)
         except TelegramError:
             pass  # ignore users who fail
 
