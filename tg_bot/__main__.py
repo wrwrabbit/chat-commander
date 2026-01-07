@@ -1,6 +1,7 @@
-from asyncio import Lock
+from asyncio import Lock, iscoroutinefunction
 from datetime import datetime, timedelta
 import importlib
+import inspect
 import re
 from typing import Optional
 
@@ -19,7 +20,7 @@ from tg_bot.modules import ALL_MODULES
 from tg_bot.modules.helper_funcs.chat_status import is_user_admin
 from tg_bot.modules.helper_funcs.misc import paginate_modules
 
-PM_START_TEXT = """
+PM_START_TEXT = r"""
 Hi {}, my name is {}\! If you have any questions on how to use me, read /help \- and then head to @MarieSupport\.
 
 I\'m a group manager bot built in python3, using the python\-telegram\-bot library, and am fully opensource; \
@@ -37,7 +38,7 @@ VPS\!
 
 HELP_STRINGS = "Depricated"
 _HELP_STRINGS_CACHE: Optional[str] = None
-_HELP_STRING_TEMPLATE: str = """
+_HELP_STRING_TEMPLATE: str = r"""
 Hey there\! My name is *{bot_name}*\.
 I'm a modular group management bot with a few fun extras\! Have a look at the following for an idea of some of \\
 the things I can help you with\.
@@ -72,7 +73,7 @@ async def get_formatted_help_string() -> str:
             LOGGER.error(f"Could not get bot name for HELP_STRINGS: {e}", exc_info=True)
             actual_bot_name = "[Unknown Bot Name]"  # Заглушка в случае ошибки
 
-        allow_excl_text = "" if not ALLOW_EXCL else "\\nAll commands can either be used with / or \!\.\\n"
+        allow_excl_text = "" if not ALLOW_EXCL else r"\\nAll commands can either be used with / or \!\.\\n"
 
         # Формируем основную часть строки помощи, которая может включать ALLOW_EXCL
         _HELP_STRINGS_CACHE = _HELP_STRING_TEMPLATE.format(
@@ -322,7 +323,7 @@ async def send_settings(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_i
                                            parse_mode=ParseMode.MARKDOWN_V2)
         else:
             await context.bot.send_message(chat_id=user_id,
-                                           text="Seems like there aren\'t any user specific settings available :\(",
+                                           text=r"Seems like there aren\'t any user specific settings available :\(",
                                            parse_mode=ParseMode.MARKDOWN_V2)
     else:
         if CHAT_SETTINGS:
@@ -336,8 +337,8 @@ async def send_settings(context: ContextTypes.DEFAULT_TYPE, chat_id: int, user_i
             ), parse_mode=ParseMode.MARKDOWN_V2)
         else:
             await context.bot.send_message(chat_id=user_id,
-                text="Seems like there aren\'t any chat settings available :\(\n"
-                     "Send this in a group chat you\'re admin in to find its current settings\!",
+                text=r"Seems like there aren\'t any chat settings available :\(\n"
+                     r"Send this in a group chat you\'re admin in to find its current settings\!",
                 parse_mode=ParseMode.MARKDOWN_V2)
 
 
@@ -350,16 +351,24 @@ async def settings_button(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     next_match = re.match(r"stngs_next\((.+?),(.+?)\)", query.data)
     back_match = re.match(r"stngs_back\((.+?)\)", query.data)
 
-    await query.answer()  # Подтверждаем нажатие
     try:
         if mod_match:
             chat_id = mod_match.group(1)
             module = mod_match.group(2)
+            if module not in CHAT_SETTINGS:
+                # Ничего не делаем, просто подтверждаем callback (чтобы не крутился "спиннер")
+                await context.bot.answer_callback_query(query.id)
+                return
             chat = await context.bot.get_chat(int(chat_id))
+            # Поддержка как sync, так и async функций __chat_settings__
+            chat_settings_func = CHAT_SETTINGS[module].__chat_settings__
+            if iscoroutinefunction(chat_settings_func):
+                settings_text = await chat_settings_func(chat_id, user.id)
+            else:
+                settings_text = chat_settings_func(chat_id, user.id)
             text = "*{}* has the following settings for the *{}* module:\n\n".format(
                 escape_markdown(chat.title, version=2),
-                escape_markdown(CHAT_SETTINGS[module].__mod_name__, version=2)) + \
-                   CHAT_SETTINGS[module].__chat_settings__(chat_id, user.id)
+                escape_markdown(CHAT_SETTINGS[module].__mod_name__, version=2)) + settings_text
             await query.edit_message_text(text=text,
                                           parse_mode=ParseMode.MARKDOWN_V2,
                                           reply_markup=InlineKeyboardMarkup(
@@ -370,8 +379,8 @@ async def settings_button(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             chat_id = prev_match.group(1)
             curr_page = int(prev_match.group(2))
             chat = await context.bot.get_chat(int(chat_id))
-            await query.edit_message_text("Hi there\! There are quite a few settings for {} - go ahead and pick what "
-                                     "you\'re interested in\.".format(escape_markdown(chat.title, version=2)),
+            await query.edit_message_text(r"Hi there\! There are quite a few settings for {} - go ahead and pick what "
+                                     r"you\'re interested in\.".format(escape_markdown(chat.title, version=2)),
                                           parse_mode=ParseMode.MARKDOWN_V2,
                                           reply_markup=InlineKeyboardMarkup(
                                               paginate_modules(curr_page - 1, CHAT_SETTINGS, "stngs",
@@ -381,8 +390,8 @@ async def settings_button(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             chat_id = next_match.group(1)
             next_page = int(next_match.group(2))
             chat = await context.bot.get_chat(int(chat_id))
-            await query.edit_message_text("Hi there\! There are quite a few settings for {} - go ahead and pick what "
-                                     "you\'re interested in\.".format(escape_markdown(chat.title, version=2)),
+            await query.edit_message_text(r"Hi there\! There are quite a few settings for {} - go ahead and pick what "
+                                     r"you\'re interested in\.".format(escape_markdown(chat.title, version=2)),
                                           parse_mode=ParseMode.MARKDOWN_V2,
                                           reply_markup=InlineKeyboardMarkup(
                                               paginate_modules(next_page + 1, CHAT_SETTINGS, "stngs",
@@ -391,17 +400,20 @@ async def settings_button(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         elif back_match:
             chat_id = back_match.group(1)
             chat = await context.bot.get_chat(int(chat_id))
-            await query.edit_message_text(text="Hi there\! There are quite a few settings for {} \- go ahead and pick what "
-                                          "you\'re interested in\.".format(escape_markdown(chat.title, version=2)),
+            await query.edit_message_text(text=r"Hi there\! There are quite a few settings for {} \- go ahead and pick what "
+                                          r"you\'re interested in\.".format(escape_markdown(chat.title, version=2)),
                                      parse_mode=ParseMode.MARKDOWN_V2,
                                      reply_markup=InlineKeyboardMarkup(
                                          paginate_modules(0, CHAT_SETTINGS, "stngs",
                                                           chat=chat_id)))
 
-        # ensure no spinny white circle
-        await query.answer()
+        # Единый ответ на callback в конце, аналогично help_button
+        await context.bot.answer_callback_query(query.id)
+
     except BadRequest as excp:
-        LOGGER.exception("Exception %s in settings buttons. %s", excp.message, str(query.data))
+        LOGGER.exception("Exception '%s' in settings buttons. %s", excp.message, str(query.data))
+        if "Query is too old" in excp.message:
+            await context.bot.send_message(query.message.chat.id, "Menu is expired. Please type '/settings' to open new menu")
 
 
 async def get_settings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

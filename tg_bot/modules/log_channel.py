@@ -136,10 +136,10 @@ if is_module_loaded(FILENAME):
         sql.migrate_chat(old_chat_id, new_chat_id)
 
 
-    def __chat_settings__(chat_id, user_id):
+    async def __chat_settings__(chat_id, user_id):
         log_channel = sql.get_chat_log_channel(chat_id)
         if log_channel:
-            log_channel_info = application.bot.get_chat(log_channel)
+            log_channel_info = await application.bot.get_chat(log_channel)
             return "This group has all it\'s logs sent to: {} \(`{}`\)".format(
                 escape_markdown(log_channel_info.title, version=2),
                 log_channel)
