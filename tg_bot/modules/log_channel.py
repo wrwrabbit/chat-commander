@@ -68,7 +68,7 @@ if is_module_loaded(FILENAME):
         if log_channel:
             log_channel_info = await context.bot.get_chat(log_channel)
             await message.reply_text(
-                "This group has all it's logs sent to: {} \(`{}`\)".format(
+                r"This group has all it's logs sent to: {} \(`{}`\)".format(
                     escape_markdown(log_channel_info.title, version=2), log_channel),
                 parse_mode=ParseMode.MARKDOWN_V2)
 
@@ -140,20 +140,20 @@ if is_module_loaded(FILENAME):
         log_channel = sql.get_chat_log_channel(chat_id)
         if log_channel:
             log_channel_info = await application.bot.get_chat(log_channel)
-            return "This group has all it\'s logs sent to: {} \(`{}`\)".format(
+            return r"This group has all it\'s logs sent to: {} \(`{}`\)".format(
                 escape_markdown(log_channel_info.title, version=2),
                 log_channel)
-        return "No log channel is set for this group\!"
+        return r"No log channel is set for this group\!"
 
 
-    __help__ = """
+    __help__ = r"""
 Настройка канала, в котором будут записываться определенные действия бота\.
 Настройка выполняется так:
 \- добавление бота на нужный канал \(как админа\!\)
 \- отправка /setlog в канал
 \- пересылка /setlog в группу
 
-*Только администратор:*
+\*Только администратор:\*
 \- /logchannel: получить информацию о канале лога
 \- /setlog: установить канал лога\.
 \- /unsetlog: отключить канал лога\.
