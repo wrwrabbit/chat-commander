@@ -2,7 +2,7 @@ import logging
 import os
 import sys
 
-import telegram.ext as tg
+from telegram.ext import Application
 
 ENV = bool(os.environ.get('ENV', False))
 
@@ -41,9 +41,8 @@ if ENV:
     DONATION_LINK = os.environ.get('DONATION_LINK')
     LOAD = os.environ.get("LOAD", "").split()
     NO_LOAD = os.environ.get("NO_LOAD", "translation").split()
-    DEL_CMDS = eval(os.environ.get('DEL_CMDS', False))
+    DEL_CMDS = bool(os.environ.get('DEL_CMDS', False))
     STRICT_GBAN = bool(os.environ.get('STRICT_GBAN', False))
-    WORKERS = int(os.environ.get('WORKERS', 8))
     BAN_STICKER = os.environ.get('BAN_STICKER', 'CAADAgADOwADPPEcAXkko5EB3YGYAg')
     ALLOW_EXCL = os.environ.get('ALLOW_EXCL', False)
 
@@ -65,19 +64,14 @@ if sys.version_info[0] < 3 or sys.version_info[1] < 6:
 
 SUDO_USERS.add(OWNER_ID)
 
-updater = tg.Updater(TOKEN, workers=WORKERS)
+application = (Application.builder().
+               token(TOKEN).
+               concurrent_updates(True).
+               get_updates_pool_timeout(15).
+               pool_timeout(4).
+               build())
 
-dispatcher = updater.dispatcher
 
 SUDO_USERS = list(SUDO_USERS)
 WHITELIST_USERS = list(WHITELIST_USERS)
 SUPPORT_USERS = list(SUPPORT_USERS)
-
-# Load at end to ensure all prev variables have been set
-from tg_bot.modules.helper_funcs.handlers import CustomCommandHandler, CustomRegexHandler
-
-# make sure the regex handler can take extra kwargs
-tg.RegexHandler = CustomRegexHandler
-
-if ALLOW_EXCL:
-    tg.CommandHandler = CustomCommandHandler

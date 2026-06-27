@@ -22,7 +22,6 @@ services:
       CERT_PATH: "${CERT_PATH}"
       PORT: "${PORT}"
       DEL_CMDS: "${DEL_CMDS}"
-      WORKERS: "${WORKERS}"
       BAN_STICKER: "${BAN_STICKER}"
       ALLOW_EXCL: "${ALLOW_EXCL}"
     depends_on:

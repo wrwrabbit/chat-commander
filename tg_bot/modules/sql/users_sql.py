@@ -1,8 +1,8 @@
 import threading
 
 from sqlalchemy import Column, BigInteger, UnicodeText, String, ForeignKey, func, Boolean, ForeignKeyConstraint
+from sqlalchemy.exc import OperationalError, DisconnectionError, PendingRollbackError
 
-from tg_bot import dispatcher
 from tg_bot.modules.sql import BASE, SESSION, ENGINE
 
 
@@ -62,46 +62,64 @@ Chats.__table__.create(checkfirst=True, bind=ENGINE)
 ChatMembers.__table__.create(checkfirst=True, bind=ENGINE)
 
 INSERTION_LOCK = threading.RLock()
+BOT_IN_DB = False
 
 
-def ensure_bot_in_db():
+async def ensure_bot_in_db(bot):
+    """
+    Лениво добавляет бота в таблицу users при первом обращении из уже инициализированного контекста.
+    """
+    global BOT_IN_DB
+    if BOT_IN_DB:
+        return
+
+    # Получаем данные бота вне блокировки, чтобы не держать lock во время await.
+    bot_data = await bot.get_me()
+
     with INSERTION_LOCK:
-        bot = Users(dispatcher.bot.id, False, dispatcher.bot.username)
-        SESSION.merge(bot)
+        if BOT_IN_DB:
+            return
+
+        entry = Users(bot_data.id, False, bot_data.username)
+        SESSION.merge(entry)
         SESSION.commit()
+        BOT_IN_DB = True
 
 
 def update_user(user_id, is_channel, username, chat_id=None, chat_name=None):
-    with INSERTION_LOCK:
-        user = SESSION.query(Users).filter(Users.user_id == user_id, Users.is_channel == is_channel).first()
-        if not user:
-            user = Users(user_id, is_channel, username)
-            SESSION.add(user)
-            SESSION.flush()
-        else:
-            user.username = username
+    try:
+        with INSERTION_LOCK:
+            user = SESSION.query(Users).filter(Users.user_id == user_id, Users.is_channel == is_channel).first()
+            if not user:
+                user = Users(user_id, is_channel, username)
+                SESSION.add(user)
+                SESSION.flush()
+            else:
+                user.username = username
 
-        if not chat_id or not chat_name:
+            if not chat_id or not chat_name:
+                SESSION.commit()
+                return
+
+            chat = SESSION.query(Chats).get(str(chat_id))
+            if not chat:
+                chat = Chats(str(chat_id), chat_name)
+                SESSION.add(chat)
+                SESSION.flush()
+
+            else:
+                chat.chat_name = chat_name
+
+            member = SESSION.query(ChatMembers).filter(ChatMembers.chat == chat.chat_id,
+                                                       ChatMembers.user_id == user.user_id,
+                                                       ChatMembers.is_channel == user.is_channel).first()
+            if not member:
+                chat_member = ChatMembers(chat.chat_id, user.user_id, is_channel)
+                SESSION.add(chat_member)
+
             SESSION.commit()
-            return
-
-        chat = SESSION.query(Chats).get(str(chat_id))
-        if not chat:
-            chat = Chats(str(chat_id), chat_name)
-            SESSION.add(chat)
-            SESSION.flush()
-
-        else:
-            chat.chat_name = chat_name
-
-        member = SESSION.query(ChatMembers).filter(ChatMembers.chat == chat.chat_id,
-                                                   ChatMembers.user_id == user.user_id,
-                                                   ChatMembers.is_channel == user.is_channel).first()
-        if not member:
-            chat_member = ChatMembers(chat.chat_id, user.user_id, is_channel)
-            SESSION.add(chat_member)
-
-        SESSION.commit()
+    except (OperationalError, DisconnectionError, PendingRollbackError):
+        SESSION.rollback()
 
 
 def get_userid_by_name(username):
@@ -162,9 +180,6 @@ def migrate_chat(old_chat_id, new_chat_id):
             SESSION.add(member)
 
         SESSION.commit()
-
-
-ensure_bot_in_db()
 
 
 def del_user(user_id, is_channel):

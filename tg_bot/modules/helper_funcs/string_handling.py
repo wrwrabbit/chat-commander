@@ -4,7 +4,7 @@ from typing import Dict, List
 
 import emoji
 from telegram import MessageEntity
-from telegram.utils.helpers import escape_markdown
+from telegram.helpers import escape_markdown
 
 # NOTE: the url \ escape may cause double escapes
 # match * (bold) (don't escape if in url)
@@ -144,6 +144,139 @@ def button_markdown_parser(txt: str, entities: Dict[MessageEntity, str] = None, 
     return note_data, buttons
 
 
+# MARKDOWN_V2 versions
+# MARKDOWN_V2 requires escaping: _ * [ ] ( ) ~ ` > # + - = | { } . !
+MATCH_MD_V2 = re.compile(r'\*(.*?)\*|'
+                         r'_(.*?)_|'
+                         r'`(.*?)`|'
+                         r'(?<!\\)(\[.*?\])(\(.*?\))|'
+                         r'(?P<esc>[_*\[\]()~`>#+\-=|{}.!])')
+
+# regex to find []() links -> hyperlinks/buttons (same as V1)
+LINK_REGEX_V2 = re.compile(r'(?<!\\)\[.+?\]\((.*?)\)')
+BTN_URL_REGEX_V2 = re.compile(r"(\[([^\[]+?)\]\(buttonurl:(?:/{0,2})(.+?)(:same)?\))")
+
+
+def _selective_escape_v2(to_parse: str) -> str:
+    """
+    Escape all invalid markdown V2 characters.
+    
+    :param to_parse: text to escape
+    :return: valid markdown V2 string
+    """
+    offset = 0
+    for match in MATCH_MD_V2.finditer(to_parse):
+        if match.group('esc'):
+            ent_start = match.start()
+            to_parse = to_parse[:ent_start + offset] + '\\' + to_parse[ent_start + offset:]
+            offset += 1
+    return to_parse
+
+
+def markdown_parser_v2(txt: str, entities: Dict[MessageEntity, str] = None, offset: int = 0) -> str:
+    """
+    Parse a string, escaping all invalid markdown V2 entities.
+    
+    Escapes URL's so as to avoid URL mangling.
+    Re-adds any telegram code entities obtained from the entities object.
+    
+    :param txt: text to parse
+    :param entities: dict of message entities in text
+    :param offset: message offset - command and notename length
+    :return: valid markdown V2 string
+    """
+    if not entities:
+        entities = {}
+    if not txt:
+        return ""
+    
+    prev = 0
+    res = ""
+    # Loop over all message entities, and:
+    # reinsert code
+    # escape free-standing urls
+    for ent, ent_text in entities.items():
+        if ent.offset < -offset:
+            continue
+        
+        start = ent.offset + offset  # start of entity
+        end = ent.offset + offset + ent.length - 1  # end of entity
+        
+        # we only care about code, url, text links
+        if ent.type in ("code", "url", "text_link"):
+            # count emoji to switch counter
+            count = _calc_emoji_offset(txt[:start])
+            start -= count
+            end -= count
+            
+            # URL handling -> do not escape if in [](), escape otherwise.
+            if ent.type == "url":
+                if any(match.start(1) <= start and end <= match.end(1) for match in LINK_REGEX_V2.finditer(txt)):
+                    continue
+                # else, check the escapes between the prev and last and forcefully escape the url to avoid mangling
+                else:
+                    res += _selective_escape_v2(txt[prev:start] or "") + escape_markdown(ent_text, version=2)
+            
+            # code handling
+            elif ent.type == "code":
+                res += _selective_escape_v2(txt[prev:start]) + '`' + ent_text + '`'
+            
+            # handle markdown links
+            elif ent.type == "text_link":
+                # Escape both text and URL for MARKDOWN_V2
+                escaped_text = escape_markdown(ent_text, version=2)
+                escaped_url = escape_markdown(ent.url, version=2)
+                res += _selective_escape_v2(txt[prev:start]) + "[{}]({})".format(escaped_text, escaped_url)
+            
+            end += 1
+        
+        # anything else
+        else:
+            continue
+        
+        prev = end
+    
+    res += _selective_escape_v2(txt[prev:])  # add the rest of the text
+    return res
+
+
+def button_markdown_parser_v2(txt: str, entities: Dict[MessageEntity, str] = None, offset: int = 0) -> (str, List):
+    """
+    Parse markdown V2 text and extract button URLs.
+    
+    :param txt: text to parse
+    :param entities: dict of message entities in text
+    :param offset: message offset - command and notename length
+    :return: tuple of (parsed_text, buttons_list)
+    """
+    markdown_note = markdown_parser_v2(txt, entities, offset)
+    prev = 0
+    note_data = ""
+    buttons = []
+    for match in BTN_URL_REGEX_V2.finditer(markdown_note):
+        # Check if btnurl is escaped
+        n_escapes = 0
+        to_check = match.start(1) - 1
+        while to_check > 0 and markdown_note[to_check] == "\\":
+            n_escapes += 1
+            to_check -= 1
+        
+        # if even, not escaped -> create button
+        if n_escapes % 2 == 0:
+            # create a thruple with button label, url, and newline status
+            buttons.append((match.group(2), match.group(3), bool(match.group(4))))
+            note_data += markdown_note[prev:match.start(1)]
+            prev = match.end(1)
+        # if odd, escaped -> move along
+        else:
+            note_data += markdown_note[prev:to_check]
+            prev = match.start(1) - 1
+    else:
+        note_data += markdown_note[prev:]
+    
+    return note_data, buttons
+
+
 def escape_invalid_curly_brackets(text: str, valids: List[str]) -> str:
     new_text = ""
     idx = 0
@@ -235,12 +368,12 @@ def escape_chars(text: str, to_escape: List[str]) -> str:
     return new_text
 
 
-def extract_time(message, time_val):
+async def extract_time(message, time_val):
     if any(time_val.endswith(unit) for unit in ('m', 'h', 'd')):
         unit = time_val[-1]
-        time_num = time_val[:-1]  # type: str
+        time_num = time_val[:-1]
         if not time_num.isdigit():
-            message.reply_text("Invalid time amount specified.")
+            await message.reply_text("Invalid time amount specified.")
             return ""
 
         if unit == 'm':
@@ -254,5 +387,5 @@ def extract_time(message, time_val):
             return ""
         return bantime
     else:
-        message.reply_text("Invalid time type specified. Expected m,h, or d, got: {}".format(time_val[-1]))
+        await message.reply_text("Invalid time type specified. Expected m,h, or d, got: {}".format(time_val[-1]))
         return ""

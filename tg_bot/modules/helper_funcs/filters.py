@@ -1,5 +1,5 @@
 from telegram import Message
-from telegram.ext import MessageFilter
+from telegram.ext.filters import MessageFilter
 
 from tg_bot import SUPPORT_USERS, SUDO_USERS
 
