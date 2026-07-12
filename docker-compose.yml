@@ -1,7 +1,8 @@
 version: '3.8'
 
 services:
-  bot:
+  chat_commander:
+    container_name: chat_commander
     build: ./
     # restart: always
     environment:
@@ -25,12 +26,12 @@ services:
       BAN_STICKER: "${BAN_STICKER}"
       ALLOW_EXCL: "${ALLOW_EXCL}"
     depends_on:
-      - db
+      - chat_commander-db
     # ports:
     #   - "${PORT}:${PORT}"
 
-  db:
-    container_name: db
+  chat_commander-db:
+    container_name: chat_commander-db
     image: postgres:16
     restart: always
     environment:
@@ -38,4 +39,4 @@ services:
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
       POSTGRES_DB: "${POSTGRES_DB}"
     volumes:
-      - /home/chatcomm/postgresql:/var/lib/postgresql
+      - /sec/chatcomm/postgresql:/var/lib/postgresql
