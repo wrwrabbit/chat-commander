@@ -30,7 +30,7 @@ HELP_STRINGS = "Depricated"
 _HELP_STRINGS_CACHE: Optional[str] = None
 _HELP_STRING_TEMPLATE: str = r"""
 Hey there\! My name is *{bot_name}*\.
-I'm a modular group management bot with a few fun extras\! Have a look at the following for an idea of some of \\
+I'm a modular group management bot with a few fun extras\! Have a look at the following for an idea of some of \
 the things I can help you with\.
 
 *Main* commands available:
@@ -63,7 +63,7 @@ async def get_formatted_help_string() -> str:
             LOGGER.error(f"Could not get bot name for HELP_STRINGS: {e}", exc_info=True)
             actual_bot_name = "[Unknown Bot Name]"  # Заглушка в случае ошибки
 
-        allow_excl_text = "" if not ALLOW_EXCL else r"\\nAll commands can either be used with / or \!\.\\n"
+        allow_excl_text = "" if not ALLOW_EXCL else r"\nAll commands can either be used with / or \!\.\n"
 
         # Формируем основную часть строки помощи, которая может включать ALLOW_EXCL
         _HELP_STRINGS_CACHE = _HELP_STRING_TEMPLATE.format(
