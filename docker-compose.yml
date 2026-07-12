@@ -25,6 +25,7 @@ services:
       DEL_CMDS: "${DEL_CMDS}"
       BAN_STICKER: "${BAN_STICKER}"
       ALLOW_EXCL: "${ALLOW_EXCL}"
+      LOG_LEVEL: "${LOG_LEVEL}"
     depends_on:
       - chat_commander-db
     # ports:
